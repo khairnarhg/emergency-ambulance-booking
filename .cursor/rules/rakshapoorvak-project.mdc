@@ -1,0 +1,27 @@
+---
+description: RakshaPoorvak project standards and coding rules reference
+alwaysApply: true
+---
+
+# RakshaPoorvak Project Rules
+
+This project is an Emergency Ambulance Dispatch & Triage System with:
+- **Backend:** Spring Boot + PostgreSQL
+- **Hospital Dashboard:** React + Vite (web)
+- **User App & Driver App:** Flutter (Android)
+
+## Must Follow
+
+1. **Read and follow** `docs/CODING_RULES.md` for all coding standards.
+2. **Follow** `docs/PROJECT_STRUCTURE.md` for folder layout.
+3. Use JWT for auth; validate inputs; never hardcode secrets.
+4. Keep controllers/services thin; no business logic in controllers.
+5. Use conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`.
+
+## Quick Reference
+
+- **Backend:** PascalCase classes, camelCase methods, layered architecture.
+- **React:** Functional components, hooks, TypeScript strict, no `any`.
+- **Flutter:** snake_case files, PascalCase classes, feature-first structure.
+
+When in doubt, consult `docs/CODING_RULES.md`.

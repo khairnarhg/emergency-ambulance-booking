@@ -1,0 +1,14 @@
+---
+description: React Hospital Dashboard coding standards
+globs: hospital-dashboard/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Hospital Dashboard (React) Rules
+
+- **Components:** Functional only. PascalCase. Keep under 200 lines; split if larger.
+- **Hooks:** `use` prefix, camelCase. Extract logic from components.
+- **API:** Single client with base URL, interceptors. Handle 401, show user-friendly errors.
+- **TypeScript:** Strict mode. No `any`; use `unknown` if needed. Define interfaces for props/API.
+- **State:** Local state for UI; context/Zustand for shared (auth, WebSocket).
+- **Structure:** components/, pages/, api/, hooks/, types/, utils/

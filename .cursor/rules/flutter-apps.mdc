@@ -1,0 +1,15 @@
+---
+description: Flutter mobile apps coding standards
+globs: "**/user-app/**/*.dart,**/driver-app/**/*.dart"
+alwaysApply: false
+---
+
+# Flutter Apps (User & Driver) Rules
+
+- **Files:** snake_case (e.g. `sos_confirmation_screen.dart`).
+- **Classes:** PascalCase (e.g. `SosConfirmationScreen`).
+- **Structure:** Feature-first — `features/<feature>/presentation/`. Shared in `core/`, `shared/`.
+- **Widgets:** Use `const` constructors. Extract when reused or > 50 lines.
+- **State:** One approach (Provider/Riverpod/Bloc). Keep logic out of UI.
+- **API:** Typed models, handle errors, show SnackBar/Dialog.
+- **Platform:** Use `Platform.isAndroid` or conditional imports. Test on emulator + device.

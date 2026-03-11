@@ -1,0 +1,27 @@
+# ========== RakshaPoorvak Development Environment ==========
+# Append these lines to your ~/.zshrc file:
+#   cat scripts/zshrc-additions.txt >> ~/.zshrc
+# Then run: source ~/.zshrc
+
+# Homebrew (Apple Silicon)
+eval "$(/opt/homebrew/bin/brew shellenv)"
+
+# Java 17
+export JAVA_HOME="/opt/homebrew/opt/openjdk@17"
+export PATH="$JAVA_HOME/bin:$PATH"
+
+# Maven (via Homebrew - already in /opt/homebrew/bin)
+
+# Flutter (after brew install --cask flutter)
+# Cask installs to: /opt/homebrew/Caskroom/flutter/<version>/flutter/bin
+if [ -d "/opt/homebrew/Caskroom/flutter" ]; then
+  _FLUTTER_VER=$(ls /opt/homebrew/Caskroom/flutter 2>/dev/null | tail -1)
+  [ -n "$_FLUTTER_VER" ] && export PATH="/opt/homebrew/Caskroom/flutter/$_FLUTTER_VER/flutter/bin:$PATH"
+fi
+
+# Android SDK (after installing Android Studio and setting up SDK)
+if [ -d "$HOME/Library/Android/sdk" ]; then
+  export ANDROID_HOME="$HOME/Library/Android/sdk"
+  export PATH="$ANDROID_HOME/emulator:$PATH"
+  export PATH="$ANDROID_HOME/platform-tools:$PATH"
+fi

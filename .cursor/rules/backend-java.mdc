@@ -1,0 +1,14 @@
+---
+description: Spring Boot backend coding standards
+globs: backend/**/*.java
+alwaysApply: false
+---
+
+# Backend (Spring Boot) Rules
+
+- **Controllers:** Thin layer only. Use `@Valid` for validation. Return `ResponseEntity<>` with correct status codes.
+- **Services:** Business logic here. One method = one operation. Use `@Transactional` where needed.
+- **Repositories:** Use Spring Data JPA. Avoid N+1 with `@EntityGraph` or `JOIN FETCH`.
+- **Entities:** Use `LocalDateTime`, `@CreatedDate`, `@LastModifiedDate`. Explicit `@Column` names.
+- **Exceptions:** Use `@ControllerAdvice` for global handling. Map to HTTP status, log with context.
+- **Package:** `com.rakshapoorvak.*` — controller, service, repository, model, config, exception, security.
