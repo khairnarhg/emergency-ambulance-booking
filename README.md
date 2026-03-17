@@ -273,7 +273,8 @@ See [PROJECT_STRUCTURE.md](./docs/PROJECT_STRUCTURE.md) for the recommended fold
 ## Getting Started
 
 1. **Prerequisites:** See [ENVIRONMENT_SETUP.md](./docs/ENVIRONMENT_SETUP.md) for required tools and installation steps on macOS.
-2. **Coding Standards:** AI agents and developers should follow [CODING_RULES.md](./docs/CODING_RULES.md) for consistency and quality.
+2. **Database:** See [docs/db.md](./docs/db.md) for Docker PostgreSQL setup (Rancher Desktop). Start with `docker compose -f docker-compose.raksha-db.yml up -d`.
+3. **Coding Standards:** AI agents and developers should follow [CODING_RULES.md](./docs/CODING_RULES.md) for consistency and quality.
 
 ---
 
@@ -284,6 +285,9 @@ See [PROJECT_STRUCTURE.md](./docs/PROJECT_STRUCTURE.md) for the recommended fold
 | [README.md](./README.md) | This file – project overview and quick reference |
 | [docs/PROJECT_STRUCTURE.md](./docs/PROJECT_STRUCTURE.md) | Recommended folder structure for all components |
 | [docs/ENVIRONMENT_SETUP.md](./docs/ENVIRONMENT_SETUP.md) | Prerequisites, environment setup, and Mac installation |
+| [docs/db.md](./docs/db.md) | PostgreSQL Docker setup (Rancher Desktop), pgAdmin connection |
+| [docs/POSTMAN_API_REFERENCE.md](./docs/POSTMAN_API_REFERENCE.md) | API testing with Postman – URLs, headers, sample bodies |
+| [docs/HOSPITAL_DASHBOARD_UI_PROMPT.md](./docs/HOSPITAL_DASHBOARD_UI_PROMPT.md) | Full prompt for building Hospital Dashboard UI |
 | [docs/CODING_RULES.md](./docs/CODING_RULES.md) | Coding standards for AI agents and developers |
 | [docs/PRD.md](./docs/PRD.md) | Full Product Requirements Document (reference) |
 

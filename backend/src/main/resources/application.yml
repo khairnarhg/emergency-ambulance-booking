@@ -1,10 +1,14 @@
 spring:
   application:
     name: rakshapoorvak-backend
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
 
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
 
-spring:
-  profiles:
-    active: dev
+# JWT config (override via env in prod)
+jwt:
+  secret: ${JWT_SECRET:rakshapoorvak-dev-secret-key-min-256-bits-for-development-only}
+  access-expiration: ${JWT_ACCESS_EXPIRATION:86400000}
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}

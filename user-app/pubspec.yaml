@@ -1,0 +1,56 @@
+name: user_app
+description: RakshaPoorvak - Emergency Ambulance Dispatch User App
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Navigation
+  go_router: ^14.6.3
+
+  # State management
+  flutter_riverpod: ^2.6.1
+
+  # HTTP Client
+  dio: ^5.7.0
+
+  # Secure storage
+  flutter_secure_storage: ^9.2.4
+
+  # Shared preferences
+  shared_preferences: ^2.3.4
+
+  # Maps
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
+  # Location
+  geolocator: ^13.0.2
+  permission_handler: ^11.3.1
+
+  # Fonts
+  google_fonts: ^6.2.1
+
+  # Deep link / tel
+  url_launcher: ^6.3.1
+
+  # Date formatting
+  intl: ^0.19.0
+
+  # Loading shimmer
+  shimmer: ^3.0.0
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

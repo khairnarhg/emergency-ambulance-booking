@@ -6,27 +6,56 @@ Spring Boot 3.2 backend for the Emergency Ambulance Dispatch & Triage system.
 
 - Java 17
 - Maven
-- PostgreSQL (running)
+- PostgreSQL 15+
 
-## Run
+## Quick Start
+
+### 1. Environment Setup
 
 ```bash
-# Ensure JAVA_HOME is set
-export JAVA_HOME="/opt/homebrew/opt/openjdk@17"
-export PATH="$JAVA_HOME/bin:$PATH"
+# From project root - creates DB and user
+./scripts/setup-environment.sh
+```
 
-# Run
+### 2. Run Backend
+
+```bash
+cd backend
 mvn spring-boot:run
 ```
 
-Health check: http://localhost:8080/api/health
+Flyway will create the schema on first run. Default DB: `rakshapoorvak_dev`, user: `rakshapoorvak`, password: `dev_password`.
 
-## Database
+### 3. Seed Data (optional)
 
-Update `src/main/resources/application-dev.yml` with your PostgreSQL credentials:
-- Default: `postgres` user, `postgres` database
-- Set `DB_USERNAME` and `DB_PASSWORD` env vars if needed
+```bash
+# From project root
+./scripts/seed-all.sh
+```
+
+See `seed/README.md` for test credentials.
+
+## Configuration
+
+Environment variables (or `application-dev.yml`):
+
+| Variable | Default |
+|----------|---------|
+| DB_HOST | localhost |
+| DB_PORT | 5432 |
+| DB_NAME | rakshapoorvak_dev |
+| DB_USERNAME | rakshapoorvak |
+| DB_PASSWORD | dev_password |
+| JWT_SECRET | (dev default in yml) |
+
+## API
+
+- Health: `GET /api/health`
+- Auth: `POST /api/auth/login`, `POST /api/auth/register`
+- Full spec: `docs/BACKEND_TECHNICAL_SPEC.md`
 
 ## Test with Postman
 
-- `GET http://localhost:8080/api/health` – returns `{"status":"UP","application":"RakshaPoorvak Backend"}`
+1. `GET http://localhost:8080/api/health` – health check
+2. `POST http://localhost:8080/api/auth/login` with `{"email":"patient1@test.com","password":"password123"}`
+3. Use returned `accessToken` in `Authorization: Bearer <token>` for protected endpoints
