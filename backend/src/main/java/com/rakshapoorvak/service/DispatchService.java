@@ -28,12 +28,13 @@ public class DispatchService {
     private final UserRepository userRepository;
     private final NotificationRepository notificationRepository;
     private final SosService sosService;
+    private final WebSocketBroadcastService broadcastService;
 
     public DispatchService(SosEventRepository sosEventRepository, AmbulanceRepository ambulanceRepository,
                            DriverRepository driverRepository, DoctorRepository doctorRepository,
                            HospitalStaffRepository hospitalStaffRepository, HospitalRepository hospitalRepository,
                            UserRepository userRepository, NotificationRepository notificationRepository,
-                           SosService sosService) {
+                           SosService sosService, WebSocketBroadcastService broadcastService) {
         this.sosEventRepository = sosEventRepository;
         this.ambulanceRepository = ambulanceRepository;
         this.driverRepository = driverRepository;
@@ -43,6 +44,7 @@ public class DispatchService {
         this.userRepository = userRepository;
         this.notificationRepository = notificationRepository;
         this.sosService = sosService;
+        this.broadcastService = broadcastService;
     }
 
     @Transactional
@@ -90,21 +92,30 @@ public class DispatchService {
             throw new BadRequestException("No ambulance available across all MGM branches. Please try again shortly.");
         }
 
-        List<Driver> drivers = driverRepository.findByHospitalIdAndStatus(
-                selectedAmbulance.getHospital().getId(), DriverStatus.AVAILABLE);
-        Driver driver = drivers.isEmpty() ? null : drivers.get(0);
+        // Find driver assigned to the selected ambulance first
+        Driver driver = driverRepository.findByAmbulanceId(selectedAmbulance.getId())
+                .filter(d -> d.getStatus() == DriverStatus.AVAILABLE)
+                .orElse(null);
 
+        // Fallback: find nearest available driver by their ambulance location
         if (driver == null) {
             List<Driver> allDrivers = driverRepository.findAll().stream()
                     .filter(d -> d.getStatus() == DriverStatus.AVAILABLE)
+                    .filter(d -> d.getAmbulance() != null)
                     .sorted(Comparator.comparingDouble(d -> {
-                        if (d.getHospital() == null) return Double.MAX_VALUE;
+                        Ambulance amb = d.getAmbulance();
+                        if (amb.getCurrentLatitude() == null || amb.getCurrentLongitude() == null) {
+                            return Double.MAX_VALUE;
+                        }
                         return SosService.haversine(patientLat, patientLon,
-                                d.getHospital().getLatitude().doubleValue(),
-                                d.getHospital().getLongitude().doubleValue());
+                                amb.getCurrentLatitude().doubleValue(),
+                                amb.getCurrentLongitude().doubleValue());
                     }))
                     .collect(Collectors.toList());
             driver = allDrivers.isEmpty() ? null : allDrivers.get(0);
+            if (driver != null && driver.getAmbulance() != null) {
+                selectedAmbulance = driver.getAmbulance();
+            }
         }
 
         if (driver == null) {
@@ -125,33 +136,40 @@ public class DispatchService {
         driverRepository.save(driver);
         sos = sosEventRepository.save(sos);
 
-        notificationRepository.save(Notification.builder()
+        Notification driverNotif = notificationRepository.save(Notification.builder()
                 .recipientType(RecipientType.DRIVER)
                 .recipientId(driver.getId())
                 .title("New Emergency Dispatch")
                 .body("Patient: " + sos.getUser().getFullName() + " – " +
                         (sos.getCriticality() != null ? sos.getCriticality().name() : "UNKNOWN"))
                 .build());
+        broadcastService.broadcastNotificationToDriver(driver.getId(), driverNotif);
 
-        notificationRepository.save(Notification.builder()
+        Notification userNotif = notificationRepository.save(Notification.builder()
                 .recipientType(RecipientType.USER)
                 .recipientId(sos.getUser().getId())
                 .title("Ambulance Assigned!")
                 .body("An MGM ambulance is on the way. Driver: " + driver.getUser().getFullName())
                 .build());
+        broadcastService.broadcastNotificationToUser(sos.getUser().getId(), userNotif);
 
         if (sos.getHospital() != null) {
-            notificationRepository.save(Notification.builder()
+            Notification hospNotif = notificationRepository.save(Notification.builder()
                     .recipientType(RecipientType.HOSPITAL)
                     .recipientId(sos.getHospital().getId())
                     .title("Ambulance Dispatched")
                     .body("Ambulance " + selectedAmbulance.getRegistrationNumber() +
                             " dispatched for SOS #" + sosId)
                     .build());
+            broadcastService.broadcastNotificationToHospital(sos.getHospital().getId(), hospNotif);
+            broadcastService.broadcastDashboardRefresh(sos.getHospital().getId());
         }
 
         log.info("Ambulance {} assigned to SOS {} (driver: {})", selectedAmbulance.getId(), sosId, driver.getId());
-        return sosService.getById(sosId);
+        SosEventDto result = sosService.getById(sosId);
+        broadcastService.broadcastSosStatusChange(sosId, result);
+        broadcastService.broadcastDispatchToDriver(driver.getId(), result);
+        return result;
     }
 
     @Transactional

@@ -61,7 +61,7 @@ public class DriverService {
     }
 
     private DriverDto toDto(Driver d) {
-        return DriverDto.builder()
+        var builder = DriverDto.builder()
                 .id(d.getId())
                 .userId(d.getUser().getId())
                 .fullName(d.getUser().getFullName())
@@ -70,7 +70,13 @@ public class DriverService {
                 .licenseNumber(d.getLicenseNumber())
                 .hospitalId(d.getHospital().getId())
                 .hospitalName(d.getHospital().getName())
-                .status(d.getStatus().name())
-                .build();
+                .status(d.getStatus().name());
+
+        if (d.getAmbulance() != null) {
+            builder.ambulanceId(d.getAmbulance().getId())
+                   .ambulanceRegistrationNumber(d.getAmbulance().getRegistrationNumber());
+        }
+
+        return builder.build();
     }
 }

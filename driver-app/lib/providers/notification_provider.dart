@@ -1,4 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stomp_dart_client/stomp_handler.dart';
+import 'package:driver_app/core/network/websocket_service.dart';
 import 'package:driver_app/providers/auth_provider.dart';
 import 'package:driver_app/data/api/notification_api.dart';
 import 'package:driver_app/data/models/notification.dart';
@@ -33,8 +35,11 @@ class NotificationState {
 
 class NotificationNotifier extends StateNotifier<NotificationState> {
   final NotificationApi _api;
+  final WebSocketService _wsService;
+  StompUnsubscribe? _notifUnsub;
 
-  NotificationNotifier(this._api) : super(const NotificationState());
+  NotificationNotifier(this._api, this._wsService)
+      : super(const NotificationState());
 
   Future<void> loadNotifications() async {
     state = state.copyWith(isLoading: true);
@@ -94,9 +99,31 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
       );
     } catch (_) {}
   }
+
+  void subscribeToNotifications(int driverId) {
+    _notifUnsub?.call();
+    _notifUnsub = _wsService.subscribe(
+      '/topic/notifications/driver/$driverId',
+      (data) {
+        final notification = AppNotification.fromJson(data);
+        state = state.copyWith(
+          notifications: [notification, ...state.notifications],
+          unreadCount: state.unreadCount + 1,
+        );
+      },
+    );
+  }
+
+  void unsubscribeFromNotifications() {
+    _notifUnsub?.call();
+    _notifUnsub = null;
+  }
 }
 
 final notificationProvider =
     StateNotifierProvider<NotificationNotifier, NotificationState>((ref) {
-  return NotificationNotifier(ref.read(notificationApiProvider));
+  return NotificationNotifier(
+    ref.read(notificationApiProvider),
+    ref.read(websocketServiceProvider),
+  );
 });

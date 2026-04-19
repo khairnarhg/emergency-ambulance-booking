@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../core/constants/app_constants.dart';
+import '../core/network/websocket_service.dart';
 import '../data/api/auth_api.dart';
 import '../data/models/auth_response.dart';
 import '../data/models/user.dart';
@@ -37,8 +38,10 @@ class AuthState {
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthApi _authApi;
   final FlutterSecureStorage _storage;
+  final WebSocketService _wsService;
 
-  AuthNotifier(this._authApi, this._storage) : super(const AuthState()) {
+  AuthNotifier(this._authApi, this._storage, this._wsService)
+      : super(const AuthState()) {
     _initialize();
   }
 
@@ -60,6 +63,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
             roles: const ['USER'],
           ),
         );
+        _wsService.connect();
       }
     }
   }
@@ -73,6 +77,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         isAuthenticated: true,
         user: response.user,
       );
+      _wsService.connect();
       return true;
     } catch (e) {
       state = state.copyWith(
@@ -102,6 +107,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         isAuthenticated: true,
         user: response.user,
       );
+      _wsService.connect();
       return true;
     } catch (e) {
       state = state.copyWith(
@@ -113,6 +119,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
+    _wsService.disconnect();
     await _authApi.logout();
     await _storage.deleteAll();
     state = const AuthState();
@@ -149,6 +156,7 @@ final authNotifierProvider =
   return AuthNotifier(
     ref.read(authApiProvider),
     const FlutterSecureStorage(),
+    ref.read(websocketServiceProvider),
   );
 });
 

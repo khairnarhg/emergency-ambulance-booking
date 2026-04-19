@@ -29,7 +29,7 @@ class Driver {
     return Driver(
       id: json['id'] as int,
       userId: json['userId'] as int? ?? 0,
-      name: json['name'] as String?,
+      name: json['fullName'] as String? ?? json['name'] as String?,
       email: json['email'] as String?,
       phone: json['phone'] as String?,
       licenseNumber: json['licenseNumber'] as String?,

@@ -1,7 +1,7 @@
 # RakshaPoorvak Backend – Technical Specification
 
-**Version:** 1.0  
-**Last Updated:** March 2025
+**Version:** 1.1  
+**Last Updated:** April 2026
 
 ---
 
@@ -41,7 +41,6 @@ The RakshaPoorvak backend is a REST API that powers the Emergency Ambulance Disp
 ### Out of Scope (Current Phase)
 
 - Video/phone calls between doctor, paramedic, and user
-- WebSocket real-time push (Phase 2)
 
 ---
 
@@ -54,8 +53,9 @@ The RakshaPoorvak backend is a REST API that powers the Emergency Ambulance Disp
 | Database | PostgreSQL 15+ |
 | ORM | Spring Data JPA |
 | Migrations | Flyway |
-| Auth | JWT (io.jsonwebtoken) |
+| Auth | JWT (JJWT 0.12.3) |
 | Validation | Bean Validation (JSR-380) |
+| Real-time | WebSocket (STOMP over SockJS) |
 | DB Client | pgAdmin |
 
 ---
@@ -186,8 +186,8 @@ CREATED → DISPATCHING → AMBULANCE_ASSIGNED → DRIVER_ENROUTE_TO_PATIENT
 
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
-| POST | `/api/location/update` | Driver sends GPS update | Driver |
-| POST | `/api/sos-events/{sosId}/location` | Alternative: location for specific SOS | Driver |
+| POST | `/api/locations` | Driver posts GPS update (with sosEventId, ambulanceId) | Driver |
+| PATCH | `/api/ambulances/{id}/location` | Update ambulance current position | Driver |
 
 ### 5.6 Dispatch
 
@@ -298,6 +298,44 @@ CREATED → DISPATCHING → AMBULANCE_ASSIGNED → DRIVER_ENROUTE_TO_PATIENT
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | GET | `/api/health` | Health check | No |
+
+---
+
+## 5.17 WebSocket (Real-Time Communication)
+
+The backend provides real-time updates via STOMP over WebSocket with SockJS fallback.
+
+### Connection
+
+| Setting | Value |
+|---------|-------|
+| Endpoint | `/ws` (native WebSocket) or `/ws` with SockJS |
+| Protocol | STOMP |
+| Auth | JWT passed via `Authorization` header in STOMP CONNECT frame |
+| Topic Prefix | `/topic` |
+| App Destination Prefix | `/app` |
+
+### WebSocket Topics
+
+| Topic | Payload | Purpose |
+|-------|---------|---------|
+| `/topic/sos/{sosId}/status` | `SosEventDto` | SOS status changes |
+| `/topic/sos/{sosId}/location` | `{sosEventId, ambulanceId, latitude, longitude, timestamp}` | Real-time ambulance location |
+| `/topic/dispatch/driver/{driverId}` | `SosEventDto` | New dispatch request to driver |
+| `/topic/notifications/user/{userId}` | `NotificationDto` | Notifications for users |
+| `/topic/notifications/driver/{driverId}` | `NotificationDto` | Notifications for drivers |
+| `/topic/notifications/hospital/{hospitalId}` | `NotificationDto` | Notifications for hospital staff |
+| `/topic/dashboard/{hospitalId}` | `{refresh: true}` | Dashboard refresh signal |
+
+### Broadcast Service
+
+`WebSocketBroadcastService` sends messages via `SimpMessagingTemplate`:
+
+- `broadcastSosStatusChange(sosId, sosDto)` — Called on status updates
+- `broadcastAmbulanceLocation(sosId, lat, lng, ambulanceId)` — Called on location updates
+- `broadcastDispatchToDriver(driverId, sosDto)` — Called when driver assigned
+- `broadcastNotificationToUser/Driver/Hospital()` — Called on notification creation
+- `broadcastDashboardRefresh(hospitalId)` — Called on SOS changes
 
 ---
 

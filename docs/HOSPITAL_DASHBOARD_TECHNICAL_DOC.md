@@ -1,8 +1,8 @@
 # Hospital Dashboard – Technical Documentation
 
 **RakshaPoorvak Hospital Dashboard**
-**Version:** 1.0
-**Last Updated:** March 2026
+**Version:** 1.1
+**Last Updated:** April 2026
 
 ---
 
@@ -51,7 +51,8 @@ The Hospital Dashboard is a **React web application** that serves as the real-ti
 ```
 Hospital Dashboard (this app)
         │
-        │  REST API (Axios, HTTP polling)
+        ├── REST API (Axios)
+        ├── WebSocket (STOMP over SockJS)
         ▼
   Spring Boot Backend (port 8080)
         │
@@ -59,7 +60,9 @@ Hospital Dashboard (this app)
   PostgreSQL Database
 ```
 
-The dashboard uses **HTTP polling** (React Query refetch intervals) instead of WebSocket for real-time updates. Typical polling intervals are 10–30 seconds depending on the data type.
+The dashboard uses a **hybrid approach** for real-time updates:
+- **WebSocket (STOMP)** for instant push notifications (SOS status, dispatch, notifications, dashboard refresh)
+- **HTTP polling** (React Query refetch intervals, 15–60s) as a fallback safety net
 
 ---
 
@@ -266,8 +269,8 @@ User Interaction
 
 | Decision | Details |
 |----------|---------|
-| **Polling over WebSocket** | React Query `refetchInterval` (10–30s) instead of WebSocket push. WebSocket is Phase 2. |
-| **Zustand for client state** | Auth tokens, hospital context, notification count. Persisted via `zustand/middleware/persist`. |
+| **WebSocket + HTTP polling fallback** | WebSocket (STOMP) for real-time push; React Query `refetchInterval` (15–60s) as backup. |
+| **Zustand for client state** | Auth tokens, hospital context, WebSocket connection, notification count. Persisted via `zustand/middleware/persist`. |
 | **React Query for server state** | All API data fetched/cached via `useQuery`. Mutations invalidate relevant queries. |
 | **No `any` types** | Strict TypeScript throughout. All API responses have defined interfaces. |
 | **Thin pages, reusable components** | Pages compose common components (DataTable, Badge, Card, etc.) |
@@ -678,7 +681,23 @@ Three Zustand stores manage client-side state.
 |--------|-----------|-------------|
 | `setUnreadCount` | `(count: number) => void` | Update unread count |
 
-- **No persistence** (refreshed on each session via polling)
+- **No persistence** (refreshed on each session via polling/WebSocket)
+
+### websocketStore (`src/store/websocketStore.ts`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `client` | `Client \| null` | STOMP client instance |
+| `connected` | `boolean` | Connection status |
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `connect` | `() => void` | Establish WebSocket connection with JWT auth |
+| `disconnect` | `() => void` | Close WebSocket connection |
+
+- **No persistence** (connection re-established on each session)
+- Uses SockJS as transport, STOMP as messaging protocol
+- Auto-reconnects with 5-second delay on disconnect
 
 ---
 
@@ -1218,19 +1237,35 @@ function useHospitalId(): number | undefined
 
 Returns the hospital ID from the hospital store.
 
+### `useStompSubscription<T>()` (`src/hooks/useStompSubscription.ts`)
+
+```typescript
+function useStompSubscription<T>(
+  topic: string | null,
+  onMessage: (data: T) => void
+): void
+```
+
+Subscribes to a STOMP topic when WebSocket is connected:
+- Automatically subscribes/unsubscribes based on connection state
+- Parses incoming JSON messages to typed data
+- Cleans up subscription on unmount or topic change
+
 ### `useNotificationPolling()` (`src/hooks/useNotificationPolling.ts`)
 
 ```typescript
 function useNotificationPolling(): void
 ```
 
-When authenticated:
-- Immediately fetches `GET /api/notifications/unread-count`
-- Sets up 30-second polling interval
-- Updates `notificationStore.unreadCount`
-- Cleans up interval on unmount
+Hybrid approach for notifications:
+- **WebSocket**: Subscribes to `/topic/notifications/hospital/{hospitalId}` for real-time push
+- **HTTP polling**: Fetches unread count every 60 seconds as fallback
+- Updates `notificationStore.unreadCount` from both sources
+- Shows toast notification on new WebSocket message
 
-This hook runs in `App.tsx` via the `<NotificationPoller />` component.
+### `useLocationNames()` (`src/hooks/useLocationNames.ts`)
+
+Reverse geocodes coordinates via Nominatim API (1 req/sec rate limit).
 
 ---
 
@@ -1419,12 +1454,22 @@ cd hospital-dashboard && npm run dev
 # 5. Open http://localhost:5173 and login as staff@hospital.com / password123
 ```
 
-### Understanding the Polling System
+### Understanding the Real-Time System
 
-The dashboard does **not** use WebSocket. Instead:
-- React Query's `refetchInterval` polls the backend at set intervals (10–30s).
-- The `useNotificationPolling` hook polls unread count every 30s via `setInterval`.
-- To change polling frequency, modify the `refetchInterval` value in the relevant `useQuery` call.
+The dashboard uses a **hybrid WebSocket + polling approach**:
+
+**WebSocket (primary):**
+- `websocketStore` manages STOMP connection via SockJS
+- `useStompSubscription` hook subscribes to topics
+- Topics used:
+  - `/topic/dashboard/{hospitalId}` — triggers React Query invalidation
+  - `/topic/notifications/hospital/{hospitalId}` — real-time notification push
+
+**HTTP Polling (fallback):**
+- React Query's `refetchInterval` polls at 15–60s intervals
+- Ensures data freshness even if WebSocket disconnects
+
+To change polling frequency, modify the `refetchInterval` value in the relevant `useQuery` call.
 
 ### Key Files to Understand First
 

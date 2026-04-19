@@ -1,4 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stomp_dart_client/stomp_handler.dart';
+import 'package:driver_app/core/network/websocket_service.dart';
 import 'package:driver_app/providers/auth_provider.dart';
 import 'package:driver_app/data/api/dispatch_api.dart';
 import 'package:driver_app/data/api/sos_api.dart';
@@ -44,8 +46,11 @@ class DispatchState {
 class DispatchNotifier extends StateNotifier<DispatchState> {
   final DispatchApi _dispatchApi;
   final SosApi _sosApi;
+  final WebSocketService _wsService;
+  StompUnsubscribe? _dispatchUnsub;
+  StompUnsubscribe? _statusUnsub;
 
-  DispatchNotifier(this._dispatchApi, this._sosApi)
+  DispatchNotifier(this._dispatchApi, this._sosApi, this._wsService)
       : super(const DispatchState());
 
   Future<void> loadPendingRequests() async {
@@ -117,6 +122,43 @@ class DispatchNotifier extends StateNotifier<DispatchState> {
   void clearActiveCase() {
     state = state.copyWith(clearActiveCase: true);
   }
+
+  void subscribeToDispatch(int driverId) {
+    _dispatchUnsub?.call();
+    _dispatchUnsub = _wsService.subscribe(
+      '/topic/dispatch/driver/$driverId',
+      (data) {
+        final sos = SosEvent.fromJson(data);
+        final exists = state.pendingRequests.any((r) => r.id == sos.id);
+        if (!exists) {
+          state = state.copyWith(
+            pendingRequests: [sos, ...state.pendingRequests],
+          );
+        }
+      },
+    );
+  }
+
+  void unsubscribeFromDispatch() {
+    _dispatchUnsub?.call();
+    _dispatchUnsub = null;
+  }
+
+  void subscribeToSosStatus(int sosId) {
+    _statusUnsub?.call();
+    _statusUnsub = _wsService.subscribe(
+      '/topic/sos/$sosId/status',
+      (data) {
+        final updated = SosEvent.fromJson(data);
+        state = state.copyWith(activeCase: updated);
+      },
+    );
+  }
+
+  void unsubscribeFromSosStatus() {
+    _statusUnsub?.call();
+    _statusUnsub = null;
+  }
 }
 
 final dispatchProvider =
@@ -124,5 +166,6 @@ final dispatchProvider =
   return DispatchNotifier(
     ref.read(dispatchApiProvider),
     ref.read(sosApiProvider),
+    ref.read(websocketServiceProvider),
   );
 });

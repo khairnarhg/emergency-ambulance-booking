@@ -50,6 +50,11 @@ class _SosTrackingScreenState extends ConsumerState<SosTrackingScreen> {
     final sosAsync = ref.watch(sosEventProvider(widget.sosId));
     final trackingAsync = ref.watch(trackingProvider(widget.sosId));
 
+    // Prefer the real-time tracking status (updated via WebSocket) over
+    // the initially-fetched SOS event status.
+    final liveStatus =
+        trackingAsync.valueOrNull?.status;
+
     return sosAsync.when(
       loading: () => const Scaffold(
         body: Center(child: CircularProgressIndicator()),
@@ -59,6 +64,8 @@ class _SosTrackingScreenState extends ConsumerState<SosTrackingScreen> {
         body: Center(child: Text(extractErrorMessage(e))),
       ),
       data: (sos) {
+        final currentStatus = liveStatus ?? sos.status;
+
         return Scaffold(
           backgroundColor: AppColors.background,
           body: SafeArea(
@@ -95,7 +102,7 @@ class _SosTrackingScreenState extends ConsumerState<SosTrackingScreen> {
                           ],
                         ),
                       ),
-                      StatusBadge(status: sos.status),
+                      StatusBadge(status: currentStatus),
                     ],
                   ),
                 ),
@@ -133,7 +140,7 @@ class _SosTrackingScreenState extends ConsumerState<SosTrackingScreen> {
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             child: SosStatusTimeline(
-                                currentStatus: sos.status),
+                                currentStatus: currentStatus),
                           ),
                         ),
                         const SizedBox(height: 12),

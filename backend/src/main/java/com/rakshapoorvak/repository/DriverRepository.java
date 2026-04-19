@@ -21,4 +21,6 @@ public interface DriverRepository extends JpaRepository<Driver, Long> {
 
     @Query("SELECT d FROM Driver d WHERE d.hospital.id = :hospitalId AND d.status = 'AVAILABLE'")
     List<Driver> findAvailableByHospitalId(@Param("hospitalId") Long hospitalId);
+
+    Optional<Driver> findByAmbulanceId(Long ambulanceId);
 }

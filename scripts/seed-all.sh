@@ -34,6 +34,13 @@ if [ -f "$MIGRATION_FILE" ]; then
   echo "Ensuring V2 migration columns exist..."
   psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -f "$MIGRATION_FILE" 2>/dev/null || true
 fi
+
+# Apply V3 migration if not yet applied (links drivers to ambulances)
+MIGRATION_V3="$PROJECT_ROOT/backend/src/main/resources/db/migration/V3__link_driver_ambulance.sql"
+if [ -f "$MIGRATION_V3" ]; then
+  echo "Ensuring V3 migration columns exist..."
+  psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -f "$MIGRATION_V3" 2>/dev/null || true
+fi
 echo ""
 
 for f in "$SEED_DIR"/0*.sql; do

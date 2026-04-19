@@ -20,4 +20,6 @@ public class DriverDto {
     private Long hospitalId;
     private String hospitalName;
     private String status;
+    private Long ambulanceId;
+    private String ambulanceRegistrationNumber;
 }

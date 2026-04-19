@@ -42,13 +42,15 @@ public class SosService {
     private final AmbulanceRepository ambulanceRepository;
     private final DriverRepository driverRepository;
     private final LocationUpdateRepository locationUpdateRepository;
+    private final WebSocketBroadcastService broadcastService;
 
     public SosService(SosEventRepository sosEventRepository, UserRepository userRepository,
                       HospitalRepository hospitalRepository, MedicalProfileRepository medicalProfileRepository,
                       EmergencyContactRepository emergencyContactRepository,
                       NotificationRepository notificationRepository,
                       AmbulanceRepository ambulanceRepository, DriverRepository driverRepository,
-                      LocationUpdateRepository locationUpdateRepository) {
+                      LocationUpdateRepository locationUpdateRepository,
+                      WebSocketBroadcastService broadcastService) {
         this.sosEventRepository = sosEventRepository;
         this.userRepository = userRepository;
         this.hospitalRepository = hospitalRepository;
@@ -58,6 +60,7 @@ public class SosService {
         this.ambulanceRepository = ambulanceRepository;
         this.driverRepository = driverRepository;
         this.locationUpdateRepository = locationUpdateRepository;
+        this.broadcastService = broadcastService;
     }
 
     @Transactional
@@ -86,16 +89,20 @@ public class SosService {
                 nearestHospital != null ? nearestHospital.getName() : "none");
 
         if (nearestHospital != null) {
-            notificationRepository.save(Notification.builder()
+            Notification hospitalNotif = notificationRepository.save(Notification.builder()
                     .recipientType(RecipientType.HOSPITAL)
                     .recipientId(nearestHospital.getId())
                     .title("New SOS Alert!")
                     .body("Patient: " + user.getFullName() + " – " +
                             (criticality != null ? criticality.name() : "UNKNOWN") + " severity")
                     .build());
+            broadcastService.broadcastNotificationToHospital(nearestHospital.getId(), hospitalNotif);
+            broadcastService.broadcastDashboardRefresh(nearestHospital.getId());
         }
 
-        return toDto(sos);
+        SosEventDto dto = toDto(sos);
+        broadcastService.broadcastSosStatusChange(sos.getId(), dto);
+        return dto;
     }
 
     @Transactional
@@ -207,7 +214,12 @@ public class SosService {
 
         createStatusNotifications(sos, newStatus);
 
-        return toDto(sos);
+        SosEventDto dto = toDto(sos);
+        broadcastService.broadcastSosStatusChange(sosId, dto);
+        if (sos.getHospital() != null) {
+            broadcastService.broadcastDashboardRefresh(sos.getHospital().getId());
+        }
+        return dto;
     }
 
     @Transactional
@@ -238,24 +250,29 @@ public class SosService {
         sos = sosEventRepository.save(sos);
         log.info("SOS {} completed, ambulance and driver released", sosId);
 
-        notificationRepository.save(Notification.builder()
+        Notification userNotif = notificationRepository.save(Notification.builder()
                 .recipientType(RecipientType.USER)
                 .recipientId(sos.getUser().getId())
                 .title("Case Completed")
                 .body("Your emergency case #" + sosId + " has been completed. Stay safe!")
                 .build());
+        broadcastService.broadcastNotificationToUser(sos.getUser().getId(), userNotif);
 
         if (sos.getHospital() != null) {
             String ambReg = ambulance != null ? ambulance.getRegistrationNumber() : "N/A";
-            notificationRepository.save(Notification.builder()
+            Notification hospNotif = notificationRepository.save(Notification.builder()
                     .recipientType(RecipientType.HOSPITAL)
                     .recipientId(sos.getHospital().getId())
                     .title("SOS Completed")
                     .body("SOS #" + sosId + " completed. Ambulance " + ambReg + " is now available.")
                     .build());
+            broadcastService.broadcastNotificationToHospital(sos.getHospital().getId(), hospNotif);
+            broadcastService.broadcastDashboardRefresh(sos.getHospital().getId());
         }
 
-        return toDto(sos);
+        SosEventDto dto = toDto(sos);
+        broadcastService.broadcastSosStatusChange(sosId, dto);
+        return dto;
     }
 
     @Transactional
@@ -318,63 +335,71 @@ public class SosService {
 
         switch (newStatus) {
             case DRIVER_ENROUTE_TO_PATIENT -> {
-                notificationRepository.save(Notification.builder()
+                Notification un = notificationRepository.save(Notification.builder()
                         .recipientType(RecipientType.USER).recipientId(userId)
                         .title("Ambulance On The Way!")
                         .body("Your MGM ambulance is en route.")
                         .build());
+                broadcastService.broadcastNotificationToUser(userId, un);
                 if (hospitalId != null) {
-                    notificationRepository.save(Notification.builder()
+                    Notification hn = notificationRepository.save(Notification.builder()
                             .recipientType(RecipientType.HOSPITAL).recipientId(hospitalId)
                             .title("Driver En Route")
                             .body("Driver " + driverName + " is heading to patient for SOS #" + sos.getId())
                             .build());
+                    broadcastService.broadcastNotificationToHospital(hospitalId, hn);
                 }
             }
             case REACHED_PATIENT -> {
-                notificationRepository.save(Notification.builder()
+                Notification un = notificationRepository.save(Notification.builder()
                         .recipientType(RecipientType.USER).recipientId(userId)
                         .title("Ambulance Arrived")
                         .body("The ambulance has reached your location")
                         .build());
+                broadcastService.broadcastNotificationToUser(userId, un);
                 if (hospitalId != null) {
-                    notificationRepository.save(Notification.builder()
+                    Notification hn = notificationRepository.save(Notification.builder()
                             .recipientType(RecipientType.HOSPITAL).recipientId(hospitalId)
                             .title("Patient Reached")
                             .body("Driver reached patient for SOS #" + sos.getId())
                             .build());
+                    broadcastService.broadcastNotificationToHospital(hospitalId, hn);
                 }
             }
             case PICKED_UP -> {
                 if (hospitalId != null) {
-                    notificationRepository.save(Notification.builder()
+                    Notification hn = notificationRepository.save(Notification.builder()
                             .recipientType(RecipientType.HOSPITAL).recipientId(hospitalId)
                             .title("Patient Picked Up")
                             .body("Patient picked up, heading to " + hospitalName)
                             .build());
+                    broadcastService.broadcastNotificationToHospital(hospitalId, hn);
                 }
             }
             case ENROUTE_TO_HOSPITAL -> {
                 if (hospitalId != null) {
-                    notificationRepository.save(Notification.builder()
+                    Notification hn = notificationRepository.save(Notification.builder()
                             .recipientType(RecipientType.HOSPITAL).recipientId(hospitalId)
                             .title("En Route to Hospital")
                             .body("Ambulance " + ambReg + " heading to " + hospitalName + ". Prepare for arrival.")
                             .build());
+                    broadcastService.broadcastNotificationToHospital(hospitalId, hn);
                 }
             }
             case ARRIVED_AT_HOSPITAL -> {
-                notificationRepository.save(Notification.builder()
+                Notification un = notificationRepository.save(Notification.builder()
                         .recipientType(RecipientType.USER).recipientId(userId)
                         .title("Arrived at Hospital")
                         .body("You have arrived at " + hospitalName)
                         .build());
+                broadcastService.broadcastNotificationToUser(userId, un);
                 if (hospitalId != null) {
-                    notificationRepository.save(Notification.builder()
+                    Notification hn = notificationRepository.save(Notification.builder()
                             .recipientType(RecipientType.HOSPITAL).recipientId(hospitalId)
                             .title("Ambulance Arrived")
                             .body("Ambulance " + ambReg + " arrived at hospital with patient")
                             .build());
+                    broadcastService.broadcastNotificationToHospital(hospitalId, hn);
                 }
             }
             default -> { }

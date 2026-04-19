@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -27,7 +27,8 @@ import Button from '../components/common/Button.tsx';
 import StatusTimeline from '../components/sos/StatusTimeline.tsx';
 import { sosStatusColor, sosStatusLabel, criticalityColor, getApiErrorMessage } from '../utils/parseStatus.ts';
 import { formatDateTime, formatTime } from '../utils/formatDate.ts';
-import type { SosTracking as SosTrackingType } from '../types/index.ts';
+import { useStompSubscription } from '../hooks/useStompSubscription.ts';
+import type { SosTracking as SosTrackingType, SosEvent as SosEventType } from '../types/index.ts';
 
 // ── Map icons ──
 function createIcon(color: string, label: string) {
@@ -80,16 +81,41 @@ export default function SosDetailPage() {
     queryKey: ['sos-event', sosId],
     queryFn: () => getSosEvent(sosId),
     select: (res) => res.data,
-    refetchInterval: 15000,
+    refetchInterval: 60000,
   });
 
   const { data: tracking } = useQuery({
     queryKey: ['sos-tracking', sosId],
     queryFn: () => getSosTracking(sosId),
     select: (res) => res.data as SosTrackingType,
-    refetchInterval: 8000,
+    refetchInterval: 60000,
     enabled: !!sos && sos.ambulanceId !== null,
   });
+
+  const onStatusChange = useCallback(
+    (_data: Partial<SosEventType>) => {
+      queryClient.invalidateQueries({ queryKey: ['sos-event', sosId] });
+      queryClient.invalidateQueries({ queryKey: ['sos-tracking', sosId] });
+    },
+    [queryClient, sosId],
+  );
+
+  const onLocationUpdate = useCallback(
+    (_data: { sosEventId: number; ambulanceId: number; latitude: number; longitude: number; timestamp: string }) => {
+      queryClient.invalidateQueries({ queryKey: ['sos-tracking', sosId] });
+    },
+    [queryClient, sosId],
+  );
+
+  useStompSubscription<Partial<SosEventType>>(
+    sosId ? `/topic/sos/${sosId}/status` : null,
+    onStatusChange,
+  );
+
+  useStompSubscription<{ sosEventId: number; ambulanceId: number; latitude: number; longitude: number; timestamp: string }>(
+    sosId ? `/topic/sos/${sosId}/location` : null,
+    onLocationUpdate,
+  );
 
   const { data: triageRecords } = useQuery({
     queryKey: ['triage-records', sosId],

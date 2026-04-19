@@ -35,4 +35,8 @@ public class Driver extends BaseAuditEntity {
 
     @Column(name = "license_number", length = 50)
     private String licenseNumber;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ambulance_id")
+    private Ambulance ambulance;
 }

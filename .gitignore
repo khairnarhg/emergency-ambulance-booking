@@ -58,3 +58,6 @@ coverage/
 # Misc
 *.pem
 .cache/
+
+/docs
+/.cursor

@@ -1,8 +1,8 @@
 # RakshaPoorvak User App – Technical Documentation
 
 **Component:** User Mobile Application (Android)
-**Version:** 1.0
-**Last Updated:** March 2026
+**Version:** 1.1
+**Last Updated:** April 2026
 
 ---
 
@@ -50,7 +50,6 @@ The RakshaPoorvak User App is a **Flutter Android application** for citizens and
 
 - Video/audio consultation with doctor
 - iOS-specific builds (Android only)
-- WebSocket real-time push (polling-based in Phase 1)
 - Dark theme
 - Multi-language support
 
@@ -59,8 +58,8 @@ The RakshaPoorvak User App is a **Flutter Android application** for citizens and
 ```
 User App (Flutter Android)
         │
-        │ REST API (JSON over HTTP)
-        │ Bearer JWT auth
+        ├── REST API (JSON over HTTP, Bearer JWT auth)
+        ├── WebSocket (STOMP over SockJS)
         ▼
 RakshaPoorvak Backend (Spring Boot)
         │
@@ -108,6 +107,12 @@ RakshaPoorvak Backend (Spring Boot)
 | `url_launcher` | 6.3.1 | Open phone dialer (`tel:`) |
 | `intl` | 0.19.0 | Date/time formatting |
 
+### Real-Time
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `stomp_dart_client` | 1.0.0 | STOMP WebSocket client for real-time updates |
+
 ### `pubspec.yaml` (abridged)
 
 ```yaml
@@ -151,7 +156,8 @@ user-app/
 │   │   ├── theme/
 │   │   │   └── app_theme.dart      # AppColors + AppTheme (Material 3)
 │   │   ├── network/
-│   │   │   └── api_client.dart     # Dio singleton, auth interceptor, 401 refresh
+│   │   │   ├── api_client.dart     # Dio singleton, auth interceptor, 401 refresh
+│   │   │   └── websocket_service.dart  # STOMP WebSocket client
 │   │   └── utils/
 │   │       └── format_date.dart    # formatDateTime, formatDate, timeAgo
 │   ├── data/
@@ -289,7 +295,7 @@ Backend REST API
 ### Key Design Decisions
 
 - **Riverpod over Provider/Bloc** — simpler scoping, compile-time safety, no BuildContext needed in providers
-- **Polling over WebSocket** — backend Phase 1 is REST only; tracking screen polls every 7 seconds
+- **WebSocket + HTTP polling fallback** — STOMP WebSocket for real-time updates; HTTP polling as fallback when WebSocket unavailable
 - **`flutter_secure_storage`** — tokens stored in Android Keystore (encrypted at rest)
 - **No `dynamic`** — all JSON is parsed into typed models; no `Map<String, dynamic>` leaking into UI
 - **GoRouter ShellRoute** — bottom navigation is a shell that wraps `/home`, `/history`, `/profile`, `/notifications`; SOS/profile sub-routes are outside the shell (full-screen)
@@ -615,17 +621,26 @@ final isAuth = ref.watch(isAuthenticatedProvider);
 final user = ref.watch(currentUserProvider);
 ```
 
-### `TrackingNotifier` — Auto-Polling
+### `TrackingNotifier` — WebSocket + Polling Fallback
 
-Tracking is implemented via a `StateNotifier` that starts a `Timer` when created:
+Tracking is implemented via a `StateNotifier` that uses WebSocket for real-time updates with HTTP polling as fallback:
 
 ```dart
 class TrackingNotifier extends StateNotifier<AsyncValue<TrackingInfo?>> {
   Timer? _timer;
+  StompUnsubscribe? _statusUnsub;
+  StompUnsubscribe? _locationUnsub;
 
+  // WebSocket subscriptions
+  void _subscribeWebSocket() {
+    _statusUnsub = _wsService.subscribe('/topic/sos/$_sosId/status', _onStatusUpdate);
+    _locationUnsub = _wsService.subscribe('/topic/sos/$_sosId/location', _onLocationUpdate);
+  }
+
+  // HTTP polling fallback (30s if WS connected, 7s otherwise)
   void startPolling() {
     _timer = Timer.periodic(
-      const Duration(seconds: AppConstants.trackingPollIntervalSeconds),
+      Duration(seconds: _wsService.isConnected ? 30 : 7),
       (_) => _fetch(),
     );
   }
@@ -635,11 +650,9 @@ class TrackingNotifier extends StateNotifier<AsyncValue<TrackingInfo?>> {
 }
 ```
 
-Used in the tracking screen:
-
-```dart
-final trackingAsync = ref.watch(trackingProvider(sosId));
-```
+**WebSocket Topics Subscribed:**
+- `/topic/sos/{sosId}/status` — SOS status changes
+- `/topic/sos/{sosId}/location` — Real-time ambulance location updates
 
 The timer disposes automatically when the provider is disposed (screen popped).
 
@@ -1133,20 +1146,25 @@ Patient can view SosDetailScreen for full summary
 
 ## 15. Live Tracking & Map
 
-### Polling Architecture
+### Hybrid WebSocket + Polling Architecture
 
 ```
 trackingProvider(sosId) created
-  └─ TrackingNotifier._fetch() called immediately
-  └─ startPolling() → Timer.periodic(7 seconds)
-       └─ every tick → GET /api/sos-events/{sosId}/tracking
+  └─ TrackingNotifier._fetch() called immediately (HTTP)
+  └─ _subscribeWebSocket() subscribes to:
+       ├─ /topic/sos/{sosId}/status → instant status updates
+       └─ /topic/sos/{sosId}/location → instant ambulance location
+  └─ startPolling() → Timer.periodic (fallback)
+       ├─ 30 seconds if WebSocket connected
+       └─ 7 seconds if WebSocket disconnected
+       └─ GET /api/sos-events/{sosId}/tracking
             └─ updates state → MapTrackingWidget re-renders
             └─ if COMPLETED/CANCELLED → stopPolling()
 
-Screen popped → Riverpod disposes TrackingNotifier → timer cancelled
+Screen popped → Riverpod disposes TrackingNotifier → timer cancelled, WebSocket unsubscribed
 ```
 
-The 7-second interval (`AppConstants.trackingPollIntervalSeconds`) can be changed in `AppConstants`. The first fetch happens immediately on provider creation, so there is no 7-second delay before the first location appears.
+**WebSocket provides instant updates**, while HTTP polling ensures data freshness even if WebSocket connection is lost. The first fetch happens immediately on provider creation via HTTP.
 
 ### Map Setup
 

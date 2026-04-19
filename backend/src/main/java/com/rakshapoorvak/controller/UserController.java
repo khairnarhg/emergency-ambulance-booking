@@ -28,7 +28,7 @@ public class UserController {
         this.userService = userService;
     }
 
-    @GetMapping("/profile")
+    @GetMapping({"/profile", "/me"})
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<UserProfileDto> getProfile() {
         String email = SecurityUtils.getCurrentUserEmailOrThrow();
@@ -36,7 +36,7 @@ public class UserController {
         return ResponseEntity.ok(userService.getProfile(email));
     }
 
-    @PatchMapping("/profile")
+    @PatchMapping({"/profile", "/me"})
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<UserProfileDto> updateProfile(@Valid @RequestBody UpdateProfileRequest request) {
         String email = SecurityUtils.getCurrentUserEmailOrThrow();
@@ -44,28 +44,28 @@ public class UserController {
         return ResponseEntity.ok(userService.updateProfile(email, request));
     }
 
-    @GetMapping("/medical-profile")
+    @GetMapping({"/medical-profile", "/me/medical-profile"})
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<MedicalProfileDto> getMedicalProfile() {
         String email = SecurityUtils.getCurrentUserEmailOrThrow();
         return ResponseEntity.ok(userService.getMedicalProfile(email));
     }
 
-    @PatchMapping("/medical-profile")
+    @PatchMapping({"/medical-profile", "/me/medical-profile"})
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<MedicalProfileDto> updateMedicalProfile(@Valid @RequestBody UpdateMedicalProfileRequest request) {
         String email = SecurityUtils.getCurrentUserEmailOrThrow();
         return ResponseEntity.ok(userService.updateMedicalProfile(email, request));
     }
 
-    @GetMapping("/emergency-contacts")
+    @GetMapping({"/emergency-contacts", "/me/emergency-contacts"})
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<List<EmergencyContactDto>> getEmergencyContacts() {
         String email = SecurityUtils.getCurrentUserEmailOrThrow();
         return ResponseEntity.ok(userService.getEmergencyContacts(email));
     }
 
-    @PostMapping("/emergency-contacts")
+    @PostMapping({"/emergency-contacts", "/me/emergency-contacts"})
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<EmergencyContactDto> createEmergencyContact(@Valid @RequestBody EmergencyContactRequest request) {
         String email = SecurityUtils.getCurrentUserEmailOrThrow();
@@ -74,7 +74,7 @@ public class UserController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
-    @PutMapping("/emergency-contacts/{id}")
+    @PutMapping({"/emergency-contacts/{id}", "/me/emergency-contacts/{id}"})
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<EmergencyContactDto> updateEmergencyContact(@PathVariable Long id,
                                                                       @Valid @RequestBody EmergencyContactRequest request) {
@@ -82,7 +82,7 @@ public class UserController {
         return ResponseEntity.ok(userService.updateEmergencyContact(email, id, request));
     }
 
-    @DeleteMapping("/emergency-contacts/{id}")
+    @DeleteMapping({"/emergency-contacts/{id}", "/me/emergency-contacts/{id}"})
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<Void> deleteEmergencyContact(@PathVariable Long id) {
         String email = SecurityUtils.getCurrentUserEmailOrThrow();

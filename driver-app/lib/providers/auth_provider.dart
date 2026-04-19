@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:driver_app/core/constants/app_constants.dart';
 import 'package:driver_app/core/network/api_client.dart';
+import 'package:driver_app/core/network/websocket_service.dart';
 import 'package:driver_app/data/api/auth_api.dart';
 import 'package:driver_app/data/models/auth_response.dart';
 import 'package:driver_app/data/models/user.dart';
@@ -40,14 +41,16 @@ class AuthState {
 
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthApi _authApi;
+  final WebSocketService _wsService;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
-  AuthNotifier(this._authApi) : super(const AuthState());
+  AuthNotifier(this._authApi, this._wsService) : super(const AuthState());
 
   Future<void> checkAuth() async {
     final token = await _storage.read(key: AppConstants.accessTokenKey);
     if (token != null) {
       state = state.copyWith(status: AuthStatus.authenticated);
+      _wsService.connect();
     } else {
       state = state.copyWith(status: AuthStatus.unauthenticated);
     }
@@ -84,6 +87,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
         status: AuthStatus.authenticated,
         user: response.user,
       );
+
+      _wsService.connect();
     } catch (e) {
       String message = 'Login failed. Please try again.';
       if (e.toString().contains('401')) {
@@ -100,6 +105,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
+    _wsService.disconnect();
     try {
       await _authApi.logout();
     } catch (_) {}
@@ -109,5 +115,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
 }
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  return AuthNotifier(ref.read(authApiProvider));
+  return AuthNotifier(
+    ref.read(authApiProvider),
+    ref.read(websocketServiceProvider),
+  );
 });

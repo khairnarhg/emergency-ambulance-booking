@@ -34,11 +34,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _initialize() async {
     await _locationService.requestPermission();
     _currentPosition = await _locationService.getCurrentPosition();
-    ref.read(driverProvider.notifier).loadDriver();
+    await ref.read(driverProvider.notifier).loadDriver();
     ref.read(dispatchProvider.notifier).loadActiveCase();
     ref.read(dispatchProvider.notifier).loadPendingRequests();
     ref.read(notificationProvider.notifier).loadUnreadCount();
+    _subscribeToWebSocket();
     _startPolling();
+  }
+
+  void _subscribeToWebSocket() {
+    final driver = ref.read(driverProvider).driver;
+    if (driver == null) return;
+    if (driver.isAvailable) {
+      ref.read(dispatchProvider.notifier).subscribeToDispatch(driver.id);
+    }
+    ref.read(notificationProvider.notifier).subscribeToNotifications(driver.id);
   }
 
   void _startPolling() {
@@ -57,6 +67,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    ref.read(dispatchProvider.notifier).unsubscribeFromDispatch();
+    ref.read(notificationProvider.notifier).unsubscribeFromNotifications();
     super.dispose();
   }
 

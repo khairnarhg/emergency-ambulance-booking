@@ -30,15 +30,17 @@ public class LocationService {
     private final DriverRepository driverRepository;
     private final SosEventRepository sosEventRepository;
     private final UserRepository userRepository;
+    private final WebSocketBroadcastService broadcastService;
 
     public LocationService(LocationUpdateRepository locationUpdateRepository, AmbulanceRepository ambulanceRepository,
                            DriverRepository driverRepository, SosEventRepository sosEventRepository,
-                           UserRepository userRepository) {
+                           UserRepository userRepository, WebSocketBroadcastService broadcastService) {
         this.locationUpdateRepository = locationUpdateRepository;
         this.ambulanceRepository = ambulanceRepository;
         this.driverRepository = driverRepository;
         this.sosEventRepository = sosEventRepository;
         this.userRepository = userRepository;
+        this.broadcastService = broadcastService;
     }
 
     @Transactional
@@ -70,6 +72,13 @@ public class LocationService {
                 .recordedAt(Instant.now())
                 .build();
         locationUpdateRepository.save(lu);
+
+        if (request.getSosEventId() != null && ambulance != null) {
+            broadcastService.broadcastAmbulanceLocation(
+                    request.getSosEventId(), request.getLatitude(), request.getLongitude(),
+                    ambulance.getId());
+        }
+
         log.debug("Location update posted for ambulance {} sos {} by driver {}",
                 request.getAmbulanceId(), request.getSosEventId(), driver.getId());
     }

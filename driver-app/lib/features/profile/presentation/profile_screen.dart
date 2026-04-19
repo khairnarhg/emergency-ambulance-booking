@@ -16,7 +16,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    ref.read(driverProvider.notifier).loadDriver();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(driverProvider.notifier).loadDriver();
+    });
   }
 
   @override

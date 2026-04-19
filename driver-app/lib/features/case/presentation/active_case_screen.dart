@@ -62,6 +62,7 @@ class _ActiveCaseScreenState extends ConsumerState<ActiveCaseScreen> {
     await _loadSosData();
     setState(() => _isLoading = false);
 
+    _subscribeToSosStatus();
     _startGpsBroadcast();
     _startRouteRecalc();
     _startPeriodicRefresh();
@@ -156,8 +157,12 @@ class _ActiveCaseScreenState extends ConsumerState<ActiveCaseScreen> {
     });
   }
 
+  void _subscribeToSosStatus() {
+    ref.read(dispatchProvider.notifier).subscribeToSosStatus(widget.sosId);
+  }
+
   void _startPeriodicRefresh() {
-    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       try {
         await ref
             .read(dispatchProvider.notifier)
@@ -313,6 +318,7 @@ class _ActiveCaseScreenState extends ConsumerState<ActiveCaseScreen> {
     _gpsTimer?.cancel();
     _routeTimer?.cancel();
     _refreshTimer?.cancel();
+    ref.read(dispatchProvider.notifier).unsubscribeFromSosStatus();
     _mapController.dispose();
     _sheetController.dispose();
     super.dispose();
@@ -320,6 +326,15 @@ class _ActiveCaseScreenState extends ConsumerState<ActiveCaseScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<DispatchState>(dispatchProvider, (previous, next) {
+      if (next.activeCase != null && next.activeCase!.id == widget.sosId) {
+        if (_sos == null || _sos!.status != next.activeCase!.status) {
+          setState(() => _sos = next.activeCase);
+          _calculateRoute();
+        }
+      }
+    });
+
     if (_isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),

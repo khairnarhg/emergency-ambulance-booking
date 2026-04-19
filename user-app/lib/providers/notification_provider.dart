@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stomp_dart_client/stomp_handler.dart';
 import '../core/constants/app_constants.dart';
+import '../core/network/websocket_service.dart';
 import '../data/api/notification_api.dart';
 import '../data/models/notification.dart';
+import 'auth_provider.dart';
 
 final notificationsProvider =
     FutureProvider<List<AppNotification>>((ref) async {
@@ -11,21 +14,51 @@ final notificationsProvider =
 });
 
 final unreadCountProvider = StateNotifierProvider<UnreadCountNotifier, int>(
-  (ref) => UnreadCountNotifier(ref.read(notificationApiProvider)),
+  (ref) {
+    final userId = ref.watch(currentUserProvider)?.id;
+    return UnreadCountNotifier(
+      ref.read(notificationApiProvider),
+      ref.read(websocketServiceProvider),
+      userId,
+    );
+  },
 );
 
 class UnreadCountNotifier extends StateNotifier<int> {
   final NotificationApi _api;
+  final WebSocketService _wsService;
+  final int? _userId;
   Timer? _timer;
+  StompUnsubscribe? _wsUnsub;
 
-  UnreadCountNotifier(this._api) : super(0) {
+  static const int _wsFallbackPollSeconds = 60;
+
+  UnreadCountNotifier(this._api, this._wsService, this._userId) : super(0) {
     _fetch();
     _startPolling();
+    _subscribeWebSocket();
+  }
+
+  void _subscribeWebSocket() {
+    if (_userId == null) return;
+    _wsUnsub = _wsService.subscribe(
+      '/topic/notifications/user/$_userId',
+      _onNotification,
+    );
+  }
+
+  void _onNotification(Map<String, dynamic> data) {
+    if (!mounted) return;
+    state = state + 1;
   }
 
   void _startPolling() {
     _timer = Timer.periodic(
-      const Duration(seconds: AppConstants.notificationPollIntervalSeconds),
+      Duration(
+        seconds: _wsService.isConnected
+            ? _wsFallbackPollSeconds
+            : AppConstants.notificationPollIntervalSeconds,
+      ),
       (_) => _fetch(),
     );
   }
@@ -34,9 +67,7 @@ class UnreadCountNotifier extends StateNotifier<int> {
     try {
       final count = await _api.getUnreadCount();
       state = count;
-    } catch (_) {
-      // Silently fail for badge count
-    }
+    } catch (_) {}
   }
 
   void decrement() {
@@ -52,6 +83,7 @@ class UnreadCountNotifier extends StateNotifier<int> {
   @override
   void dispose() {
     _timer?.cancel();
+    _wsUnsub?.call(unsubscribeHeaders: {});
     super.dispose();
   }
 }

@@ -10,17 +10,23 @@ This document defines the recommended folder structure for the RakshaPoorvak mon
 major-project-26/
 ├── README.md
 ├── .gitignore
-├── docs/
-│   ├── PROJECT_STRUCTURE.md      # This file
+├── docker-compose.raksha-db.yml  # PostgreSQL Docker setup
+├── docs/                         # Documentation
+│   ├── PROJECT_STRUCTURE.md
 │   ├── ENVIRONMENT_SETUP.md
 │   ├── CODING_RULES.md
-│   └── PRD.md
-│
+│   ├── PRD.md
+│   ├── BACKEND_TECHNICAL_SPEC.md
+│   ├── HOSPITAL_DASHBOARD_TECHNICAL_DOC.md
+│   ├── USER_APP_TECHNICAL_DOC.md
+│   ├── DRIVER_APP_TECHNICAL_DOC.md
+│   └── ...
+├── seed/                         # Database seed SQL files
+├── scripts/                      # Utility scripts (seed-all.sh, etc.)
 ├── backend/                      # Spring Boot API
 ├── hospital-dashboard/           # React + Vite (Web)
 ├── user-app/                     # Flutter (User Mobile)
-├── driver-app/                   # Flutter (Driver Mobile)
-└── shared/                       # Shared types, constants, OpenAPI spec (optional)
+└── driver-app/                   # Flutter (Driver Mobile)
 ```
 
 ---
@@ -38,65 +44,83 @@ backend/
 │   │   │           ├── RakshaPoorvakApplication.java
 │   │   │           ├── config/
 │   │   │           │   ├── SecurityConfig.java
-│   │   │           │   ├── WebSocketConfig.java
+│   │   │           │   ├── WebSocketConfig.java      # STOMP/SockJS config
 │   │   │           │   └── CorsConfig.java
 │   │   │           ├── controller/
 │   │   │           │   ├── AuthController.java
 │   │   │           │   ├── SosController.java
+│   │   │           │   ├── DispatchController.java
 │   │   │           │   ├── AmbulanceController.java
 │   │   │           │   ├── UserController.java
 │   │   │           │   ├── DriverController.java
+│   │   │           │   ├── DoctorController.java
 │   │   │           │   ├── HospitalController.java
 │   │   │           │   ├── TriageController.java
-│   │   │           │   └── WebSocketController.java
+│   │   │           │   ├── LocationController.java
+│   │   │           │   ├── NotificationController.java
+│   │   │           │   ├── DashboardController.java
+│   │   │           │   ├── AnalyticsController.java
+│   │   │           │   ├── MapController.java
+│   │   │           │   ├── PatientController.java
+│   │   │           │   └── HealthController.java
 │   │   │           ├── service/
 │   │   │           │   ├── AuthService.java
 │   │   │           │   ├── SosService.java
 │   │   │           │   ├── DispatchService.java
 │   │   │           │   ├── AmbulanceService.java
+│   │   │           │   ├── DriverService.java
+│   │   │           │   ├── DoctorService.java
+│   │   │           │   ├── HospitalService.java
 │   │   │           │   ├── TriageService.java
 │   │   │           │   ├── NotificationService.java
-│   │   │           │   └── LocationService.java
+│   │   │           │   ├── LocationService.java
+│   │   │           │   ├── DashboardService.java
+│   │   │           │   ├── AnalyticsService.java
+│   │   │           │   ├── MapService.java
+│   │   │           │   ├── PatientService.java
+│   │   │           │   ├── UserService.java
+│   │   │           │   └── WebSocketBroadcastService.java  # Real-time broadcasts
 │   │   │           ├── repository/
 │   │   │           │   ├── UserRepository.java
 │   │   │           │   ├── SosEventRepository.java
 │   │   │           │   ├── AmbulanceRepository.java
 │   │   │           │   ├── DriverRepository.java
+│   │   │           │   ├── DoctorRepository.java
+│   │   │           │   ├── HospitalRepository.java
 │   │   │           │   └── ...
 │   │   │           ├── model/
 │   │   │           │   ├── entity/
 │   │   │           │   │   ├── User.java
+│   │   │           │   │   ├── Role.java
 │   │   │           │   │   ├── SosEvent.java
 │   │   │           │   │   ├── Ambulance.java
 │   │   │           │   │   ├── Driver.java
-│   │   │           │   │   └── TriageRecord.java
+│   │   │           │   │   ├── Doctor.java
+│   │   │           │   │   ├── Hospital.java
+│   │   │           │   │   ├── TriageRecord.java
+│   │   │           │   │   ├── Medication.java
+│   │   │           │   │   ├── LocationUpdate.java
+│   │   │           │   │   ├── Notification.java
+│   │   │           │   │   ├── MedicalProfile.java
+│   │   │           │   │   ├── EmergencyContact.java
+│   │   │           │   │   └── RefreshToken.java
 │   │   │           │   └── dto/
-│   │   │           │       ├── SosEventDto.java
-│   │   │           │       ├── LocationDto.java
-│   │   │           │       └── ...
-│   │   │           ├── mapper/
+│   │   │           │       └── ... (organized by feature)
 │   │   │           ├── exception/
 │   │   │           │   ├── GlobalExceptionHandler.java
-│   │   │           │   └── CustomExceptions.java
-│   │   │           ├── security/
-│   │   │           │   ├── JwtFilter.java
-│   │   │           │   └── JwtUtil.java
-│   │   │           └── websocket/
-│   │   │               └── LocationBroadcastHandler.java
+│   │   │           │   └── ... (custom exceptions)
+│   │   │           └── security/
+│   │   │               ├── JwtAuthenticationFilter.java
+│   │   │               ├── JwtUtil.java
+│   │   │               └── CustomUserDetailsService.java
 │   │   └── resources/
 │   │       ├── application.yml
 │   │       ├── application-dev.yml
-│   │       ├── application-prod.yml
-│   │       └── db/
-│   │           └── migration/          # Flyway/Liquibase
-│   │               └── V1__init.sql
+│   │       └── db/migration/
+│   │           ├── V1__init_schema.sql
+│   │           ├── V2__add_doctor_specialization_driver_license.sql
+│   │           └── V3__link_driver_ambulance.sql
 │   └── test/
-│       └── java/
-│           └── com/
-│               └── rakshapoorvak/
-│                   ├── controller/
-│                   ├── service/
-│                   └── integration/
 └── Dockerfile
 ```
 
@@ -109,73 +133,88 @@ hospital-dashboard/
 ├── package.json
 ├── vite.config.ts
 ├── tsconfig.json
+├── tsconfig.app.json
+├── tsconfig.node.json
 ├── index.html
 ├── .env.example
-├── .env.local
 │
 ├── public/
-│   └── favicon.ico
 │
 └── src/
     ├── main.tsx
     ├── App.tsx
-    ├── vite-env.d.ts
     │
     ├── api/
-    │   ├── client.ts              # Axios/fetch setup
+    │   ├── client.ts              # Axios with interceptors
     │   ├── auth.api.ts
     │   ├── sos.api.ts
-    │   ├── ambulance.api.ts
-    │   └── websocket.ts
+    │   ├── dispatch.api.ts
+    │   ├── dashboard.api.ts
+    │   ├── hospitals.api.ts
+    │   ├── ambulances.api.ts
+    │   ├── doctors.api.ts
+    │   ├── drivers.api.ts
+    │   ├── triage.api.ts
+    │   ├── analytics.api.ts
+    │   ├── notifications.api.ts
+    │   ├── patients.api.ts
+    │   └── map.api.ts
     │
     ├── components/
-    │   ├── common/                # Reusable UI
-    │   │   ├── Button/
-    │   │   ├── Card/
-    │   │   ├── Modal/
-    │   │   └── Map/
+    │   ├── common/
+    │   │   ├── Badge.tsx
+    │   │   ├── Button.tsx
+    │   │   ├── Card.tsx
+    │   │   ├── DataTable.tsx
+    │   │   ├── Input.tsx
+    │   │   └── Modal.tsx
     │   ├── layout/
-    │   │   ├── Header/
-    │   │   ├── Sidebar/
-    │   │   └── Layout.tsx
+    │   │   ├── Layout.tsx
+    │   │   ├── Sidebar.tsx
+    │   │   └── Topbar.tsx
     │   ├── dashboard/
-    │   │   ├── CommandDashboard.tsx
-    │   │   ├── SosMonitor.tsx
-    │   │   ├── LiveMap.tsx
-    │   │   ├── AmbulanceList.tsx
-    │   │   └── DoctorAssignment.tsx
-    │   ├── triage/
-    │   │   ├── VitalsView.tsx
-    │   │   └── InTransitRecords.tsx
-    │   └── analytics/
-    │       └── ResponseTimeChart.tsx
+    │   │   └── StatCard.tsx
+    │   └── sos/
+    │       └── StatusTimeline.tsx
     │
     ├── pages/
     │   ├── Login.tsx
     │   ├── Dashboard.tsx
+    │   ├── SosMonitor.tsx
     │   ├── SosDetail.tsx
-    │   ├── AmbulanceTracking.tsx
-    │   └── Analytics.tsx
+    │   ├── LiveMap.tsx
+    │   ├── Ambulances.tsx
+    │   ├── Staff.tsx
+    │   ├── Analytics.tsx
+    │   ├── Notifications.tsx
+    │   └── Patients.tsx
     │
     ├── hooks/
     │   ├── useAuth.ts
-    │   ├── useWebSocket.ts
-    │   └── useSosEvents.ts
+    │   ├── useHospital.ts
+    │   ├── useStompSubscription.ts   # WebSocket subscriptions
+    │   ├── useNotificationPolling.ts
+    │   └── useLocationNames.ts
     │
-    ├── store/                     # Zustand/Redux (if used)
-    │   └── authStore.ts
+    ├── store/
+    │   ├── authStore.ts
+    │   ├── hospitalStore.ts
+    │   ├── notificationStore.ts
+    │   └── websocketStore.ts        # STOMP client management
     │
     ├── types/
     │   └── index.ts
     │
     ├── utils/
-    │   └── helpers.ts
+    │   ├── formatDate.ts
+    │   ├── parseStatus.ts
+    │   └── geocode.ts
     │
     ├── routes/
     │   └── index.tsx
     │
     └── styles/
-        └── global.css
+        └── index.css
 ```
 
 ---
@@ -186,10 +225,9 @@ hospital-dashboard/
 user-app/
 ├── pubspec.yaml
 ├── analysis_options.yaml
-├── .env.example
 │
 ├── android/
-├── ios/
+│   └── app/src/main/AndroidManifest.xml
 ├── lib/
 │   ├── main.dart
 │   │
@@ -199,52 +237,58 @@ user-app/
 │   │
 │   ├── core/
 │   │   ├── constants/
+│   │   │   └── app_constants.dart
 │   │   ├── theme/
-│   │   ├── utils/
-│   │   └── errors/
+│   │   │   └── app_theme.dart
+│   │   ├── network/
+│   │   │   ├── api_client.dart
+│   │   │   └── websocket_service.dart    # STOMP WebSocket
+│   │   └── utils/
+│   │       └── format_date.dart
 │   │
 │   ├── data/
 │   │   ├── api/
-│   │   │   ├── api_client.dart
 │   │   │   ├── auth_api.dart
 │   │   │   ├── sos_api.dart
-│   │   │   └── websocket_client.dart
-│   │   ├── models/
-│   │   │   ├── user.dart
-│   │   │   ├── sos_event.dart
-│   │   │   └── ambulance.dart
-│   │   └── repositories/
+│   │   │   ├── user_api.dart
+│   │   │   └── notification_api.dart
+│   │   └── models/
+│   │       ├── auth_response.dart
+│   │       ├── user.dart
+│   │       ├── sos_event.dart
+│   │       ├── tracking.dart
+│   │       └── notification.dart
 │   │
-│   ├── domain/
-│   │   ├── entities/
-│   │   └── repositories/          # Abstract interfaces
+│   ├── providers/
+│   │   ├── auth_provider.dart
+│   │   ├── sos_provider.dart
+│   │   └── notification_provider.dart
 │   │
 │   ├── features/
-│   │   ├── auth/
-│   │   │   ├── presentation/
-│   │   │   │   ├── login_screen.dart
-│   │   │   │   └── register_screen.dart
-│   │   │   └── ...
-│   │   ├── sos/
-│   │   │   ├── presentation/
-│   │   │   │   ├── sos_button_screen.dart
-│   │   │   │   ├── sos_confirmation_screen.dart
-│   │   │   │   └── sos_active_screen.dart
-│   │   │   └── ...
-│   │   ├── tracking/
-│   │   │   └── presentation/
-│   │   │       └── live_tracking_screen.dart
-│   │   ├── history/
-│   │   │   └── presentation/
-│   │   │       └── emergency_history_screen.dart
-│   │   └── profile/
-│   │       └── presentation/
-│   │           └── profile_screen.dart
+│   │   ├── auth/presentation/
+│   │   │   ├── login_screen.dart
+│   │   │   └── register_screen.dart
+│   │   ├── home/presentation/
+│   │   │   └── home_screen.dart
+│   │   ├── sos/presentation/
+│   │   │   ├── sos_create_screen.dart
+│   │   │   ├── sos_confirm_screen.dart
+│   │   │   ├── sos_tracking_screen.dart
+│   │   │   └── sos_detail_screen.dart
+│   │   ├── history/presentation/
+│   │   │   └── history_screen.dart
+│   │   ├── profile/presentation/
+│   │   │   ├── profile_screen.dart
+│   │   │   ├── edit_profile_screen.dart
+│   │   │   ├── medical_profile_screen.dart
+│   │   │   └── emergency_contacts_screen.dart
+│   │   └── notifications/presentation/
+│   │       └── notifications_screen.dart
 │   │
-│   └── shared/
-│       └── widgets/
-│           ├── map_widget.dart
-│           └── status_badge.dart
+│   └── shared/widgets/
+│       ├── sos_button.dart
+│       ├── status_badge.dart
+│       └── map_tracking_widget.dart
 │
 └── test/
 ```
@@ -257,10 +301,9 @@ user-app/
 driver-app/
 ├── pubspec.yaml
 ├── analysis_options.yaml
-├── .env.example
 │
 ├── android/
-├── ios/
+│   └── app/src/main/AndroidManifest.xml
 ├── lib/
 │   ├── main.dart
 │   │
@@ -270,66 +313,66 @@ driver-app/
 │   │
 │   ├── core/
 │   │   ├── constants/
+│   │   │   └── app_constants.dart
 │   │   ├── theme/
-│   │   ├── utils/
-│   │   └── errors/
+│   │   │   └── app_theme.dart
+│   │   ├── network/
+│   │   │   ├── api_client.dart
+│   │   │   ├── websocket_service.dart    # STOMP WebSocket
+│   │   │   └── osrm_client.dart          # Route calculation
+│   │   └── utils/
+│   │       ├── format_date.dart
+│   │       ├── haversine.dart
+│   │       └── location_service.dart
 │   │
 │   ├── data/
 │   │   ├── api/
-│   │   │   ├── api_client.dart
 │   │   │   ├── auth_api.dart
+│   │   │   ├── dispatch_api.dart
 │   │   │   ├── sos_api.dart
+│   │   │   ├── driver_api.dart
+│   │   │   ├── ambulance_api.dart
 │   │   │   ├── triage_api.dart
 │   │   │   ├── location_api.dart
-│   │   │   └── websocket_client.dart
-│   │   ├── models/
-│   │   └── repositories/
+│   │   │   └── notification_api.dart
+│   │   └── models/
+│   │       ├── user.dart
+│   │       ├── driver.dart
+│   │       ├── sos_event.dart
+│   │       ├── tracking.dart
+│   │       ├── route_info.dart
+│   │       ├── triage_record.dart
+│   │       ├── medication.dart
+│   │       └── notification.dart
 │   │
-│   ├── domain/
-│   │   ├── entities/
-│   │   └── repositories/
+│   ├── providers/
+│   │   ├── auth_provider.dart
+│   │   ├── dispatch_provider.dart
+│   │   ├── driver_provider.dart
+│   │   └── notification_provider.dart
 │   │
 │   ├── features/
-│   │   ├── auth/
-│   │   │   └── presentation/
-│   │   │       └── login_screen.dart
-│   │   ├── dispatch/
-│   │   │   └── presentation/
-│   │   │       ├── incoming_request_screen.dart
-│   │   │       └── assigned_case_screen.dart
-│   │   ├── navigation/
-│   │   │   └── presentation/
-│   │   │       └── navigation_screen.dart
-│   │   ├── triage/
-│   │   │   └── presentation/
-│   │   │       ├── vitals_entry_screen.dart
-│   │   │       └── medications_screen.dart
-│   │   ├── status/
-│   │   │   └── presentation/
-│   │   │       └── status_update_screen.dart
-│   │   └── communication/
-│   │       └── presentation/
-│   │           └── video_call_screen.dart
+│   │   ├── auth/presentation/
+│   │   │   └── login_screen.dart
+│   │   ├── home/presentation/
+│   │   │   └── home_screen.dart
+│   │   ├── dispatch/presentation/
+│   │   │   └── request_screen.dart
+│   │   ├── case/presentation/
+│   │   │   ├── active_case_screen.dart
+│   │   │   ├── triage_screen.dart
+│   │   │   ├── medications_screen.dart
+│   │   │   └── case_complete_screen.dart
+│   │   ├── history/presentation/
+│   │   │   └── history_screen.dart
+│   │   ├── profile/presentation/
+│   │   │   └── profile_screen.dart
+│   │   └── notifications/presentation/
+│   │       └── notifications_screen.dart
 │   │
-│   └── shared/
-│       └── widgets/
-│           ├── map_widget.dart
-│           └── route_display.dart
+│   └── shared/widgets/
 │
 └── test/
-```
-
----
-
-## Shared (Optional)
-
-```
-shared/
-├── openapi/
-│   └── rakshapoorvak-api.yaml    # OpenAPI 3.0 spec for backend
-├── types/
-│   └── sos_status.ts              # Shared enums (if codegen used)
-└── README.md
 ```
 
 ---
@@ -339,8 +382,8 @@ shared/
 | File | Purpose |
 |------|---------|
 | `.gitignore` | Ignore node_modules, build outputs, .env, IDE files |
-| `docker-compose.yml` | Optional: Run PostgreSQL + Backend in containers |
-| `Makefile` | Optional: Common commands (run backend, dashboard, etc.) |
+| `docker-compose.raksha-db.yml` | PostgreSQL container for development |
+| `README.md` | Project overview and quick start |
 
 ---
 

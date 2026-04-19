@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Truck, Clock, Stethoscope } from 'lucide-react';
 import { getDashboardSummary, getDashboardActiveSos } from '../api/dashboard.api.ts';
 import { useHospitalId } from '../hooks/useHospital.ts';
+import { useStompSubscription } from '../hooks/useStompSubscription.ts';
 import StatCard from '../components/dashboard/StatCard.tsx';
 import Card from '../components/common/Card.tsx';
 import Badge from '../components/common/Badge.tsx';
@@ -14,6 +15,7 @@ import type { SosEvent } from '../types/index.ts';
 export default function DashboardPage() {
   const hospitalId = useHospitalId();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data: summary, dataUpdatedAt: summaryUpdatedAt } = useQuery({
     queryKey: ['dashboard-summary', hospitalId],
@@ -29,15 +31,28 @@ export default function DashboardPage() {
         avgResponseTimeMinutes: d?.avgResponseTimeMinutes ?? 0,
       };
     },
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 
   const { data: activeSos } = useQuery({
     queryKey: ['dashboard-active-sos', hospitalId],
     queryFn: () => getDashboardActiveSos(hospitalId),
     select: (res) => (res.data as SosEvent[]) ?? [],
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
+
+  const onDashboardRefresh = useCallback(
+    (_data: { refresh: boolean }) => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard-summary', hospitalId] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-active-sos', hospitalId] });
+    },
+    [queryClient, hospitalId],
+  );
+
+  useStompSubscription<{ refresh: boolean }>(
+    hospitalId ? `/topic/dashboard/${hospitalId}` : null,
+    onDashboardRefresh,
+  );
 
   const [secondsAgo, setSecondsAgo] = useState(0);
 
