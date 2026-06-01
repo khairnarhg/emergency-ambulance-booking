@@ -61,4 +61,28 @@ public class DispatchController {
         SosEventDto dto = dispatchService.reject(sosId, email);
         return ResponseEntity.ok(dto);
     }
+
+    @PostMapping("/{sosId}/decline")
+    @PreAuthorize("hasAnyRole('HOSPITAL_STAFF', 'ADMIN')")
+    public ResponseEntity<SosEventDto> decline(@PathVariable Long sosId) {
+        log.info("POST /api/dispatch/{}/decline", sosId);
+        SosEventDto dto = dispatchService.decline(sosId);
+        return ResponseEntity.ok(dto);
+    }
+
+    @PostMapping("/{sosId}/escalate-timeout")
+    @PreAuthorize("hasAnyRole('HOSPITAL_STAFF', 'ADMIN')")
+    public ResponseEntity<SosEventDto> escalateTimeout(@PathVariable Long sosId) {
+        log.info("POST /api/dispatch/{}/escalate-timeout", sosId);
+        SosEventDto dto = dispatchService.escalateTimeout(sosId);
+        return ResponseEntity.ok(dto);
+    }
+
+    @PostMapping("/{sosId}/escalate-driver-timeout")
+    @PreAuthorize("hasAnyRole('HOSPITAL_STAFF', 'ADMIN')")
+    public ResponseEntity<SosEventDto> escalateDriverTimeout(@PathVariable Long sosId) {
+        log.info("POST /api/dispatch/{}/escalate-driver-timeout", sosId);
+        SosEventDto dto = dispatchService.escalateDriverTimeout(sosId);
+        return ResponseEntity.ok(dto);
+    }
 }

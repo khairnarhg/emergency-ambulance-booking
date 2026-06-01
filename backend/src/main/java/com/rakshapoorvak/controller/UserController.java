@@ -74,7 +74,7 @@ public class UserController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
-    @PutMapping({"/emergency-contacts/{id}", "/me/emergency-contacts/{id}"})
+    @RequestMapping(value = {"/emergency-contacts/{id}", "/me/emergency-contacts/{id}"}, method = {RequestMethod.PUT, RequestMethod.PATCH})
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<EmergencyContactDto> updateEmergencyContact(@PathVariable Long id,
                                                                       @Valid @RequestBody EmergencyContactRequest request) {

@@ -13,6 +13,7 @@ class AppConstants {
   static const Duration pollInterval = Duration(seconds: 30);
   static const Duration notificationPollInterval = Duration(seconds: 60);
   static const Duration gpsBroadcastInterval = Duration(seconds: 5);
+  static const Duration idleLocationInterval = Duration(seconds: 30);
   static const Duration routeRecalcInterval = Duration(seconds: 30);
   static const int requestTimeoutSeconds = 60;
 

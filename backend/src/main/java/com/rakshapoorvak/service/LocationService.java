@@ -59,6 +59,7 @@ public class LocationService {
             }
             ambulance.setCurrentLatitude(request.getLatitude());
             ambulance.setCurrentLongitude(request.getLongitude());
+            ambulance.setLocationUpdatedAt(Instant.now());
             ambulanceRepository.save(ambulance);
         }
 

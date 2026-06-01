@@ -84,6 +84,8 @@ export interface SosEvent {
   emergencyContacts: EmergencyContact[] | null;
   createdAt: string;
   updatedAt: string;
+  assignedAt: string | null;
+  dispatchedAt: string | null;
 }
 
 export interface LocationHistoryEntry {

@@ -42,6 +42,7 @@ public class SosService {
     private final AmbulanceRepository ambulanceRepository;
     private final DriverRepository driverRepository;
     private final LocationUpdateRepository locationUpdateRepository;
+    private final SosHospitalHistoryRepository sosHospitalHistoryRepository;
     private final WebSocketBroadcastService broadcastService;
 
     public SosService(SosEventRepository sosEventRepository, UserRepository userRepository,
@@ -50,6 +51,7 @@ public class SosService {
                       NotificationRepository notificationRepository,
                       AmbulanceRepository ambulanceRepository, DriverRepository driverRepository,
                       LocationUpdateRepository locationUpdateRepository,
+                      SosHospitalHistoryRepository sosHospitalHistoryRepository,
                       WebSocketBroadcastService broadcastService) {
         this.sosEventRepository = sosEventRepository;
         this.userRepository = userRepository;
@@ -60,6 +62,7 @@ public class SosService {
         this.ambulanceRepository = ambulanceRepository;
         this.driverRepository = driverRepository;
         this.locationUpdateRepository = locationUpdateRepository;
+        this.sosHospitalHistoryRepository = sosHospitalHistoryRepository;
         this.broadcastService = broadcastService;
     }
 
@@ -73,6 +76,7 @@ public class SosService {
         Hospital nearestHospital = findNearestHospital(
                 request.getLatitude().doubleValue(), request.getLongitude().doubleValue());
 
+        Instant now = Instant.now();
         SosEvent sos = SosEvent.builder()
                 .user(user)
                 .latitude(request.getLatitude())
@@ -82,6 +86,7 @@ public class SosService {
                 .symptoms(request.getSymptoms())
                 .criticality(criticality)
                 .hospital(nearestHospital)
+                .assignedAt(nearestHospital != null ? now : null)
                 .build();
 
         sos = sosEventRepository.save(sos);
@@ -89,6 +94,8 @@ public class SosService {
                 nearestHospital != null ? nearestHospital.getName() : "none");
 
         if (nearestHospital != null) {
+            sosHospitalHistoryRepository.save(new SosHospitalHistory(sos, nearestHospital));
+
             Notification hospitalNotif = notificationRepository.save(Notification.builder()
                     .recipientType(RecipientType.HOSPITAL)
                     .recipientId(nearestHospital.getId())
@@ -487,7 +494,9 @@ public class SosService {
                 .criticality(sos.getCriticality() != null ? sos.getCriticality().name() : null)
                 .completedAt(sos.getCompletedAt())
                 .createdAt(sos.getCreatedAt())
-                .updatedAt(sos.getUpdatedAt());
+                .updatedAt(sos.getUpdatedAt())
+                .assignedAt(sos.getAssignedAt())
+                .dispatchedAt(sos.getDispatchedAt());
 
         if (sos.getUser() != null) {
             medicalProfileRepository.findByUserId(sos.getUser().getId()).ifPresent(mp -> {

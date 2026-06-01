@@ -21,5 +21,6 @@ public class AmbulanceDto {
     private String status;
     private BigDecimal currentLatitude;
     private BigDecimal currentLongitude;
+    private Instant locationUpdatedAt;
     private Instant updatedAt;
 }

@@ -7,6 +7,8 @@ import 'package:driver_app/core/constants/app_constants.dart';
 import 'package:driver_app/core/utils/haversine.dart';
 import 'package:driver_app/core/utils/location_service.dart';
 import 'package:driver_app/core/utils/format_date.dart';
+import 'package:driver_app/data/api/ambulance_api.dart';
+import 'package:driver_app/providers/auth_provider.dart';
 import 'package:driver_app/providers/driver_provider.dart';
 import 'package:driver_app/providers/dispatch_provider.dart';
 import 'package:driver_app/providers/notification_provider.dart';
@@ -22,6 +24,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   Timer? _pollTimer;
+  Timer? _locationTimer;
   final LocationService _locationService = LocationService();
   Position? _currentPosition;
 
@@ -40,13 +43,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.read(notificationProvider.notifier).loadUnreadCount();
     _subscribeToWebSocket();
     _startPolling();
+
+    // Send initial location on login
+    await _sendLocationUpdate();
+
+    // Start idle location broadcasting if driver is available
+    final driver = ref.read(driverProvider).driver;
+    if (driver?.isAvailable == true) {
+      _startIdleLocationBroadcast();
+    }
   }
 
   void _subscribeToWebSocket() {
     final driver = ref.read(driverProvider).driver;
     if (driver == null) return;
     if (driver.isAvailable) {
-      ref.read(dispatchProvider.notifier).subscribeToDispatch(driver.id);
+      ref.read(dispatchProvider.notifier).subscribeToDispatch(
+        driver.id,
+        onNewRequest: (sosId) {
+          if (mounted) {
+            context.push('/request/$sosId');
+          }
+        },
+      );
     }
     ref.read(notificationProvider.notifier).subscribeToNotifications(driver.id);
   }
@@ -64,9 +83,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
+  void _startIdleLocationBroadcast() {
+    _locationTimer?.cancel();
+    _locationTimer = Timer.periodic(AppConstants.idleLocationInterval, (_) async {
+      final driverState = ref.read(driverProvider);
+      final dispatchState = ref.read(dispatchProvider);
+      // Only broadcast if available and not on active case
+      if (driverState.driver?.isAvailable == true &&
+          dispatchState.activeCase == null) {
+        await _sendLocationUpdate();
+      }
+    });
+  }
+
+  void _stopIdleLocationBroadcast() {
+    _locationTimer?.cancel();
+    _locationTimer = null;
+  }
+
+  Future<void> _sendLocationUpdate() async {
+    final driver = ref.read(driverProvider).driver;
+    if (driver?.ambulanceId == null) return;
+
+    final pos = await _locationService.getCurrentPosition();
+    if (pos == null) return;
+
+    _currentPosition = pos;
+
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final ambulanceApi = AmbulanceApi(apiClient);
+      await ambulanceApi.updateLocation(
+        driver!.ambulanceId!,
+        pos.latitude,
+        pos.longitude,
+      );
+    } catch (_) {
+      // Silently fail - location update is best effort
+    }
+  }
+
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _locationTimer?.cancel();
     ref.read(dispatchProvider.notifier).unsubscribeFromDispatch();
     ref.read(notificationProvider.notifier).unsubscribeFromNotifications();
     super.dispose();
@@ -268,6 +328,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         await ref
                             .read(driverProvider.notifier)
                             .updateStatus(newStatus);
+
+                        // Start/stop location broadcasting based on new status
+                        if (newStatus == 'AVAILABLE') {
+                          await _sendLocationUpdate();
+                          _startIdleLocationBroadcast();
+                        } else {
+                          _stopIdleLocationBroadcast();
+                        }
                       },
                       activeTrackColor: AppColors.success.withValues(alpha: 0.5),
                       activeThumbColor: AppColors.success,

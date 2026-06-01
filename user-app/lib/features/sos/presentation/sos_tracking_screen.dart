@@ -23,6 +23,11 @@ class SosTrackingScreen extends ConsumerStatefulWidget {
 class _SosTrackingScreenState extends ConsumerState<SosTrackingScreen> {
   bool _showCancelConfirm = false;
 
+  void _goHome() {
+    ref.read(activeSosProvider.notifier).clearActiveSos();
+    if (mounted) context.go('/home');
+  }
+
   Future<void> _callDriver(String phone) async {
     final uri = Uri(scheme: 'tel', path: phone);
     if (await canLaunchUrl(uri)) {
@@ -66,7 +71,26 @@ class _SosTrackingScreenState extends ConsumerState<SosTrackingScreen> {
       data: (sos) {
         final currentStatus = liveStatus ?? sos.status;
 
-        return Scaffold(
+        // Auto-redirect when SOS is completed or cancelled
+        final isFinished = currentStatus == 'COMPLETED' ||
+            currentStatus == 'CANCELLED';
+        if (isFinished) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              ref.read(activeSosProvider.notifier).clearActiveSos();
+              // Invalidate cache so detail screen fetches fresh data
+              ref.invalidate(sosEventProvider(widget.sosId));
+              context.go('/sos/${widget.sosId}/detail');
+            }
+          });
+        }
+
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) _goHome();
+          },
+          child: Scaffold(
           backgroundColor: AppColors.background,
           body: SafeArea(
             child: Column(
@@ -79,7 +103,7 @@ class _SosTrackingScreenState extends ConsumerState<SosTrackingScreen> {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.arrow_back_ios_new_rounded),
-                        onPressed: () => context.go('/home'),
+                        onPressed: _goHome,
                         style: IconButton.styleFrom(
                           backgroundColor: AppColors.surface,
                           shape: const CircleBorder(),
@@ -263,6 +287,7 @@ class _SosTrackingScreenState extends ConsumerState<SosTrackingScreen> {
               ],
             ),
           ),
+        ),
         );
       },
     );
@@ -454,13 +479,86 @@ class _HospitalDestinationCard extends StatelessWidget {
   }
 }
 
-class _SosInfoCard extends StatelessWidget {
+class _SosInfoCard extends ConsumerStatefulWidget {
   final dynamic sos;
+  final VoidCallback? onUpdated;
 
-  const _SosInfoCard({required this.sos});
+  const _SosInfoCard({required this.sos, this.onUpdated});
+
+  @override
+  ConsumerState<_SosInfoCard> createState() => _SosInfoCardState();
+}
+
+class _SosInfoCardState extends ConsumerState<_SosInfoCard> {
+  static const _criticalityLevels = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+
+  String? _selectedCriticality;
+  final _symptomsController = TextEditingController();
+  bool _isUpdating = false;
+
+  bool get _isEditable =>
+      widget.sos.status == 'CREATED' || widget.sos.status == 'DISPATCHING';
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCriticality = widget.sos.criticality;
+    _symptomsController.text = widget.sos.symptoms ?? '';
+  }
+
+  @override
+  void dispose() {
+    _symptomsController.dispose();
+    super.dispose();
+  }
+
+  Color _criticalityColor(String level) {
+    switch (level) {
+      case 'CRITICAL':
+        return const Color(0xFFDC2626);
+      case 'HIGH':
+        return const Color(0xFFF97316);
+      case 'MEDIUM':
+        return const Color(0xFFEAB308);
+      case 'LOW':
+      default:
+        return const Color(0xFF6B7280);
+    }
+  }
+
+  Future<void> _updateSos() async {
+    setState(() => _isUpdating = true);
+    try {
+      final api = ref.read(sosApiProvider);
+      await api.updateSos(
+        id: widget.sos.id,
+        symptoms: _symptomsController.text.trim().isEmpty
+            ? null
+            : _symptomsController.text.trim(),
+        criticality: _selectedCriticality,
+      );
+      ref.invalidate(sosEventProvider(widget.sos.id));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('SOS details updated')),
+        );
+        widget.onUpdated?.call();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(extractErrorMessage(e))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUpdating = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final sos = widget.sos;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -472,27 +570,131 @@ class _SosInfoCard extends StatelessWidget {
                 const Icon(Icons.info_outline,
                     color: AppColors.textSecondary, size: 20),
                 const SizedBox(width: 8),
-                Text(
-                  'SOS Details',
-                  style: Theme.of(context).textTheme.titleMedium,
+                Expanded(
+                  child: Text(
+                    'SOS Details',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
+                if (_isEditable)
+                  TextButton(
+                    onPressed: _isUpdating ? null : _updateSos,
+                    child: _isUpdating
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Update'),
+                  ),
               ],
             ),
             const Divider(height: 20),
-            if (sos.symptoms != null)
-              _InfoRow(
-                icon: Icons.medical_services_outlined,
-                label: 'Symptoms',
-                value: sos.symptoms,
+
+            // Criticality selection (editable) or display (read-only)
+            if (_isEditable) ...[
+              Text(
+                'Criticality Level',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
               ),
-            if (sos.symptoms != null) const SizedBox(height: 8),
-            if (sos.criticality != null)
-              _InfoRow(
-                icon: Icons.priority_high_rounded,
-                label: 'Severity',
-                value: sos.criticality,
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _criticalityLevels.map((level) {
+                  final isSelected = _selectedCriticality == level;
+                  final color = _criticalityColor(level);
+                  return ChoiceChip(
+                    label: Text(level),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      setState(() {
+                        _selectedCriticality = selected ? level : null;
+                      });
+                    },
+                    selectedColor: color,
+                    backgroundColor: color.withAlpha(26),
+                    labelStyle: TextStyle(
+                      color: isSelected ? Colors.white : color,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                    side: BorderSide(color: color.withAlpha(77)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  );
+                }).toList(),
               ),
-            if (sos.criticality != null) const SizedBox(height: 8),
+              const SizedBox(height: 16),
+
+              // Symptoms text field
+              Text(
+                'Symptoms / Description',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _symptomsController,
+                maxLines: 3,
+                maxLength: 300,
+                decoration: InputDecoration(
+                  hintText: 'Describe your symptoms or situation...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ] else ...[
+              // Read-only display
+              if (sos.symptoms != null)
+                _InfoRow(
+                  icon: Icons.medical_services_outlined,
+                  label: 'Symptoms',
+                  value: sos.symptoms,
+                ),
+              if (sos.symptoms != null) const SizedBox(height: 8),
+              if (sos.criticality != null)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.priority_high_rounded,
+                        size: 16, color: AppColors.textTertiary),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Severity: ',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: _criticalityColor(sos.criticality).withAlpha(26),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        sos.criticality,
+                        style: TextStyle(
+                          color: _criticalityColor(sos.criticality),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              if (sos.criticality != null) const SizedBox(height: 8),
+            ],
+
             _InfoRow(
               icon: Icons.access_time_rounded,
               label: 'Requested',

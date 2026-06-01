@@ -14,12 +14,14 @@ import {
   Shield,
   Navigation,
   Clock,
+  XCircle,
+  Timer,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { getSosEvent, getSosTracking, assignDoctor, unassignDoctor } from '../api/sos.api.ts';
-import { findAmbulance } from '../api/dispatch.api.ts';
+import { findAmbulance, declineSos, escalateTimeout, escalateDriverTimeout } from '../api/dispatch.api.ts';
 import { listTriageRecords, listMedications } from '../api/triage.api.ts';
 import Card from '../components/common/Card.tsx';
 import Badge from '../components/common/Badge.tsx';
@@ -28,6 +30,7 @@ import StatusTimeline from '../components/sos/StatusTimeline.tsx';
 import { sosStatusColor, sosStatusLabel, criticalityColor, getApiErrorMessage } from '../utils/parseStatus.ts';
 import { formatDateTime, formatTime } from '../utils/formatDate.ts';
 import { useStompSubscription } from '../hooks/useStompSubscription.ts';
+import { useHospitalId } from '../hooks/useHospital.ts';
 import type { SosTracking as SosTrackingType, SosEvent as SosEventType } from '../types/index.ts';
 
 // ── Map icons ──
@@ -71,11 +74,17 @@ export default function SosDetailPage() {
   const sosId = Number(id);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const myHospitalId = useHospitalId();
 
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
   const [routeEtaMin, setRouteEtaMin] = useState<number | null>(null);
+  const [declining, setDeclining] = useState(false);
+  const [showDeclineConfirm, setShowDeclineConfirm] = useState(false);
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+
+  const TIMEOUT_MINUTES = 5;
 
   const { data: sos, isLoading } = useQuery({
     queryKey: ['sos-event', sosId],
@@ -168,6 +177,66 @@ export default function SosDetailPage() {
     return () => controller.abort();
   }, [tracking?.ambulanceLatitude, tracking?.ambulanceLongitude, destLat, destLng]);
 
+  // ── Countdown timer for hospital/driver response ──
+  useEffect(() => {
+    if (!sos) {
+      setRemainingSeconds(null);
+      return;
+    }
+
+    let startTime: string | null = null;
+    if (sos.status === 'CREATED' && sos.assignedAt) {
+      startTime = sos.assignedAt;
+    } else if (sos.status === 'DISPATCHING' && sos.dispatchedAt) {
+      startTime = sos.dispatchedAt;
+    }
+
+    if (!startTime) {
+      setRemainingSeconds(null);
+      return;
+    }
+
+    const calculateRemaining = () => {
+      const elapsed = (Date.now() - new Date(startTime!).getTime()) / 1000;
+      const remaining = Math.max(0, TIMEOUT_MINUTES * 60 - elapsed);
+      setRemainingSeconds(Math.floor(remaining));
+      return remaining;
+    };
+
+    calculateRemaining();
+    const interval = setInterval(() => {
+      const remaining = calculateRemaining();
+      if (remaining <= 0) {
+        clearInterval(interval);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [sos?.status, sos?.assignedAt, sos?.dispatchedAt]);
+
+  // ── Auto-escalate on timeout ──
+  const handleAutoEscalate = useCallback(async () => {
+    if (!sos) return;
+    try {
+      if (sos.status === 'CREATED') {
+        await escalateTimeout(sosId);
+        toast.success('Request escalated to next hospital');
+      } else if (sos.status === 'DISPATCHING') {
+        await escalateDriverTimeout(sosId);
+        toast.success('Trying another ambulance');
+      }
+      invalidate();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    }
+  }, [sos?.status, sosId]);
+
+  useEffect(() => {
+    if (remainingSeconds === 0 && (sos?.status === 'CREATED' || sos?.status === 'DISPATCHING')) {
+      handleAutoEscalate();
+    }
+  }, [remainingSeconds, sos?.status, handleAutoEscalate]);
+
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['sos-event', sosId] });
     queryClient.invalidateQueries({ queryKey: ['sos-tracking', sosId] });
@@ -209,6 +278,39 @@ export default function SosDetailPage() {
     }
   };
 
+  const handleDecline = async () => {
+    setDeclining(true);
+    try {
+      await declineSos(sosId);
+      toast.success('Request declined and escalated to next hospital');
+      setShowDeclineConfirm(false);
+      invalidate();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    } finally {
+      setDeclining(false);
+    }
+  };
+
+  const handleCancelAndTryAnother = async () => {
+    setDeclining(true);
+    try {
+      await escalateDriverTimeout(sosId);
+      toast.success('Trying another ambulance');
+      invalidate();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    } finally {
+      setDeclining(false);
+    }
+  };
+
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -224,11 +326,14 @@ export default function SosDetailPage() {
     return <p className="text-center text-gray-400 py-20">SOS event not found</p>;
   }
 
-  const canFindAmbulance = sos.status === 'CREATED' || sos.status === 'DISPATCHING';
+  const isMyHospital = sos.hospitalId === myHospitalId;
+  const isEscalatedAway = !isMyHospital && (sos.status === 'CREATED' || sos.status === 'DISPATCHING');
+  const canFindAmbulance = sos.status === 'CREATED' && isMyHospital;
+  const isPendingDriverAcceptance = sos.status === 'DISPATCHING' && sos.ambulanceId !== null && isMyHospital;
   const canAssignDoctor = sos.ambulanceId !== null && sos.doctorId === null && sos.status !== 'COMPLETED' && sos.status !== 'CANCELLED';
   const canUnassignDoctor = sos.doctorId !== null && sos.status !== 'COMPLETED' && sos.status !== 'CANCELLED';
 
-  const ambulanceAssigned = sos.ambulanceId !== null && !canFindAmbulance;
+  const ambulanceAssigned = sos.ambulanceId !== null && !canFindAmbulance && !isPendingDriverAcceptance;
   const etaMinutes = tracking?.estimatedMinutesArrival ?? routeEtaMin;
 
   const hasMedicalContext = sos.bloodGroup || sos.allergies || sos.medicalConditions;
@@ -352,17 +457,94 @@ export default function SosDetailPage() {
             <Truck size={18} /> Tracking & Actions
           </h2>
 
+          {/* Escalated away notice */}
+          {isEscalatedAway && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+              <div className="flex items-center gap-2 text-gray-700 font-semibold">
+                <AlertCircle size={18} /> This request has been escalated
+              </div>
+              <p className="text-sm text-gray-600">
+                This SOS is now assigned to <span className="font-medium">{sos.hospitalName}</span>.
+              </p>
+              <p className="text-xs text-gray-500">
+                Your hospital is no longer responsible for this request.
+              </p>
+            </div>
+          )}
+
           {/* Dispatch area */}
           {canFindAmbulance && (
             <div className="space-y-3">
-              <Button
-                onClick={handleFindAmbulance}
-                loading={dispatching}
-                className="w-full py-3 text-base"
-              >
-                <Navigation size={18} />
-                {dispatching ? 'Finding nearest ambulance…' : 'Find & Assign Nearest Ambulance'}
-              </Button>
+              {/* Countdown Timer */}
+              {remainingSeconds !== null && remainingSeconds > 0 && (
+                <div className={`rounded-lg p-4 ${remainingSeconds < 60 ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Timer size={18} className={remainingSeconds < 60 ? 'text-red-600' : 'text-amber-600'} />
+                    <span className={`font-semibold ${remainingSeconds < 60 ? 'text-red-700' : 'text-amber-700'}`}>
+                      Respond within: {formatTimer(remainingSeconds)}
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-1000 ${remainingSeconds < 60 ? 'bg-red-500' : 'bg-amber-500'}`}
+                      style={{ width: `${(remainingSeconds / (TIMEOUT_MINUTES * 60)) * 100}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Request will be sent to next hospital if no response
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleFindAmbulance}
+                  loading={dispatching}
+                  className="flex-1 py-3 text-base"
+                >
+                  <Navigation size={18} />
+                  {dispatching ? 'Finding…' : 'Find Nearest Ambulance'}
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => setShowDeclineConfirm(true)}
+                  disabled={declining}
+                  className="py-3"
+                >
+                  <XCircle size={18} />
+                  Decline
+                </Button>
+              </div>
+
+              {/* Decline confirmation */}
+              {showDeclineConfirm && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-3">
+                  <p className="text-sm text-red-700 font-medium">
+                    Decline this emergency request?
+                  </p>
+                  <p className="text-xs text-red-600">
+                    It will be sent to the next nearest hospital.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="secondary"
+                      onClick={() => setShowDeclineConfirm(false)}
+                      className="flex-1"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={handleDecline}
+                      loading={declining}
+                      className="flex-1"
+                    >
+                      Yes, Decline
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {dispatchError && (
                 <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-lg p-3">
                   <AlertCircle size={16} className="shrink-0" />
@@ -375,11 +557,59 @@ export default function SosDetailPage() {
             </div>
           )}
 
+          {/* Pending driver acceptance */}
+          {isPendingDriverAcceptance && (
+            <div className="space-y-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+                <div className="flex items-center gap-2 text-blue-700 font-semibold">
+                  <Truck size={18} /> Request Sent to Driver
+                </div>
+                {sos.driverName && (
+                  <InfoRow label="Driver" value={sos.driverName} />
+                )}
+                {(sos.ambulanceRegistrationNumber ?? tracking?.ambulanceRegistrationNumber) && (
+                  <InfoRow label="Ambulance" value={sos.ambulanceRegistrationNumber ?? tracking?.ambulanceRegistrationNumber ?? ''} />
+                )}
+              </div>
+
+              {/* Driver countdown timer */}
+              {remainingSeconds !== null && remainingSeconds > 0 && (
+                <div className={`rounded-lg p-4 ${remainingSeconds < 60 ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Timer size={18} className={remainingSeconds < 60 ? 'text-red-600' : 'text-amber-600'} />
+                    <span className={`font-semibold ${remainingSeconds < 60 ? 'text-red-700' : 'text-amber-700'}`}>
+                      Awaiting driver confirmation: {formatTimer(remainingSeconds)}
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-1000 ${remainingSeconds < 60 ? 'bg-red-500' : 'bg-amber-500'}`}
+                      style={{ width: `${(remainingSeconds / (TIMEOUT_MINUTES * 60)) * 100}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Will try another ambulance if driver doesn't respond
+                  </p>
+                </div>
+              )}
+
+              <Button
+                variant="danger"
+                onClick={handleCancelAndTryAnother}
+                loading={declining}
+                className="w-full"
+              >
+                <XCircle size={18} />
+                Cancel & Try Another Ambulance
+              </Button>
+            </div>
+          )}
+
           {/* Ambulance assigned success */}
           {ambulanceAssigned && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2">
               <div className="flex items-center gap-2 text-green-700 font-semibold">
-                <CheckCircle2 size={18} /> Ambulance Assigned
+                <CheckCircle2 size={18} /> Driver Accepted
               </div>
               {sos.driverName && (
                 <InfoRow label="Driver" value={sos.driverName} />

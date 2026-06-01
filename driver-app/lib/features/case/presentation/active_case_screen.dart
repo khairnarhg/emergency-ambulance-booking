@@ -192,7 +192,14 @@ class _ActiveCaseScreenState extends ConsumerState<ActiveCaseScreen> {
       if (mounted) {
         setState(() => _isStatusUpdating = false);
         if (success) {
-          context.go('/case/${widget.sosId}/complete');
+          // Cancel timers and unsubscribe before navigating
+          _gpsTimer?.cancel();
+          _routeTimer?.cancel();
+          _refreshTimer?.cancel();
+          ref.read(dispatchProvider.notifier).unsubscribeFromSosStatus();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) context.go('/case/${widget.sosId}/complete');
+          });
         }
       }
       return;

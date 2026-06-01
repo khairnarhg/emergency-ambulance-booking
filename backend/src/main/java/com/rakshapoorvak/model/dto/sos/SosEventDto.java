@@ -44,4 +44,6 @@ public class SosEventDto {
     private Instant completedAt;
     private Instant createdAt;
     private Instant updatedAt;
+    private Instant assignedAt;
+    private Instant dispatchedAt;
 }

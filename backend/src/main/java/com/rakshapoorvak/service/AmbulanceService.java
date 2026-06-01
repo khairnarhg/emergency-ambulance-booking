@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -81,6 +82,7 @@ public class AmbulanceService {
 
         a.setCurrentLatitude(request.getLatitude());
         a.setCurrentLongitude(request.getLongitude());
+        a.setLocationUpdatedAt(Instant.now());
         a = ambulanceRepository.save(a);
         log.info("Ambulance {} location updated by driver {}", ambulanceId, driver.getId());
         return toDto(a);
@@ -114,6 +116,7 @@ public class AmbulanceService {
                 .status(a.getStatus().name())
                 .currentLatitude(a.getCurrentLatitude())
                 .currentLongitude(a.getCurrentLongitude())
+                .locationUpdatedAt(a.getLocationUpdatedAt())
                 .updatedAt(a.getUpdatedAt())
                 .build();
     }

@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -27,6 +28,7 @@ public class DispatchService {
     private final HospitalRepository hospitalRepository;
     private final UserRepository userRepository;
     private final NotificationRepository notificationRepository;
+    private final SosHospitalHistoryRepository sosHospitalHistoryRepository;
     private final SosService sosService;
     private final WebSocketBroadcastService broadcastService;
 
@@ -34,6 +36,7 @@ public class DispatchService {
                            DriverRepository driverRepository, DoctorRepository doctorRepository,
                            HospitalStaffRepository hospitalStaffRepository, HospitalRepository hospitalRepository,
                            UserRepository userRepository, NotificationRepository notificationRepository,
+                           SosHospitalHistoryRepository sosHospitalHistoryRepository,
                            SosService sosService, WebSocketBroadcastService broadcastService) {
         this.sosEventRepository = sosEventRepository;
         this.ambulanceRepository = ambulanceRepository;
@@ -43,6 +46,7 @@ public class DispatchService {
         this.hospitalRepository = hospitalRepository;
         this.userRepository = userRepository;
         this.notificationRepository = notificationRepository;
+        this.sosHospitalHistoryRepository = sosHospitalHistoryRepository;
         this.sosService = sosService;
         this.broadcastService = broadcastService;
     }
@@ -129,11 +133,12 @@ public class DispatchService {
         if (sos.getHospital() == null) {
             sos.setHospital(selectedAmbulance.getHospital());
         }
-        sos.setStatus(SosStatus.AMBULANCE_ASSIGNED);
+        // Status stays DISPATCHING until driver accepts - driver remains AVAILABLE
+        sos.setStatus(SosStatus.DISPATCHING);
+        sos.setDispatchedAt(Instant.now());
         selectedAmbulance.setStatus(AmbulanceStatus.DISPATCHED);
-        driver.setStatus(DriverStatus.BUSY);
+        // Driver stays AVAILABLE so they can see pending requests
         ambulanceRepository.save(selectedAmbulance);
-        driverRepository.save(driver);
         sos = sosEventRepository.save(sos);
 
         Notification driverNotif = notificationRepository.save(Notification.builder()
@@ -148,8 +153,8 @@ public class DispatchService {
         Notification userNotif = notificationRepository.save(Notification.builder()
                 .recipientType(RecipientType.USER)
                 .recipientId(sos.getUser().getId())
-                .title("Ambulance Assigned!")
-                .body("An MGM ambulance is on the way. Driver: " + driver.getUser().getFullName())
+                .title("Finding Ambulance")
+                .body("Looking for the nearest ambulance. Please wait...")
                 .build());
         broadcastService.broadcastNotificationToUser(sos.getUser().getId(), userNotif);
 
@@ -185,14 +190,31 @@ public class DispatchService {
             throw new BadRequestException("This SOS is not assigned to you");
         }
 
-        if (sos.getStatus() != SosStatus.AMBULANCE_ASSIGNED) {
+        if (sos.getStatus() != SosStatus.DISPATCHING) {
             throw new BadRequestException("SOS is not in dispatch state");
         }
 
+        // Now driver accepts - set BUSY and move to DRIVER_ENROUTE
+        driver.setStatus(DriverStatus.BUSY);
+        driverRepository.save(driver);
         sos.setStatus(SosStatus.DRIVER_ENROUTE_TO_PATIENT);
         sos = sosEventRepository.save(sos);
+
+        // Notify user that ambulance is confirmed
+        Notification userNotif = notificationRepository.save(Notification.builder()
+                .recipientType(RecipientType.USER)
+                .recipientId(sos.getUser().getId())
+                .title("Ambulance Confirmed!")
+                .body("Driver " + driver.getUser().getFullName() + " is on the way!")
+                .build());
+        broadcastService.broadcastNotificationToUser(sos.getUser().getId(), userNotif);
+
+        // Broadcast status change
+        SosEventDto result = sosService.getById(sosId);
+        broadcastService.broadcastSosStatusChange(sosId, result);
+
         log.info("Driver {} accepted SOS {}", driver.getId(), sosId);
-        return sosService.getById(sosId);
+        return result;
     }
 
     @Transactional(readOnly = true)
@@ -201,8 +223,9 @@ public class DispatchService {
                 userRepository.findByEmail(driverEmail).orElseThrow(
                         () -> new ResourceNotFoundException("Driver", "email", driverEmail)).getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Driver", "email", driverEmail));
+        // Look for DISPATCHING status - waiting for driver acceptance
         return sosEventRepository.findByDriverIdAndStatusIn(driver.getId(),
-                List.of(SosStatus.AMBULANCE_ASSIGNED)).stream()
+                List.of(SosStatus.DISPATCHING)).stream()
                 .map(sosService::toDto)
                 .collect(Collectors.toList());
     }
@@ -322,6 +345,193 @@ public class DispatchService {
         sosEventRepository.save(sos);
         log.info("Doctor unassigned from SOS {}", sosId);
         return sosService.getById(sosId);
+    }
+
+    /**
+     * Hospital declines the SOS request - escalate to next nearest hospital.
+     */
+    @Transactional
+    public SosEventDto decline(Long sosId) {
+        return escalateToNextHospital(sosId, EscalationReason.DECLINED);
+    }
+
+    /**
+     * Hospital timeout - escalate to next nearest hospital.
+     */
+    @Transactional
+    public SosEventDto escalateTimeout(Long sosId) {
+        return escalateToNextHospital(sosId, EscalationReason.TIMEOUT);
+    }
+
+    /**
+     * Driver timeout - try next ambulance at same hospital, or escalate to next hospital.
+     */
+    @Transactional
+    public SosEventDto escalateDriverTimeout(Long sosId) {
+        SosEvent sos = sosEventRepository.findByIdWithAssociations(sosId)
+                .orElseThrow(() -> new ResourceNotFoundException("SOS event", sosId));
+
+        if (sos.getStatus() != SosStatus.DISPATCHING) {
+            throw new BadRequestException("SOS is not awaiting driver response");
+        }
+
+        Long currentAmbulanceId = sos.getAmbulance() != null ? sos.getAmbulance().getId() : null;
+
+        // Release current ambulance/driver
+        if (sos.getAmbulance() != null) {
+            sos.getAmbulance().setStatus(AmbulanceStatus.AVAILABLE);
+            ambulanceRepository.save(sos.getAmbulance());
+        }
+        sos.setAmbulance(null);
+        sos.setDriver(null);
+        sos.setDispatchedAt(null);
+        sosEventRepository.save(sos);
+
+        // Try to find another ambulance at same hospital
+        Set<Long> excluded = new HashSet<>();
+        if (currentAmbulanceId != null) excluded.add(currentAmbulanceId);
+
+        try {
+            return findAmbulanceExcluding(sosId, excluded);
+        } catch (BadRequestException e) {
+            // No more ambulances at this hospital - escalate
+            return escalateToNextHospital(sosId, EscalationReason.DRIVER_TIMEOUT);
+        }
+    }
+
+    /**
+     * Escalate SOS to the next nearest hospital.
+     */
+    @Transactional
+    public SosEventDto escalateToNextHospital(Long sosId, EscalationReason reason) {
+        SosEvent sos = sosEventRepository.findByIdWithAssociations(sosId)
+                .orElseThrow(() -> new ResourceNotFoundException("SOS event", sosId));
+
+        if (sos.getStatus() != SosStatus.CREATED && sos.getStatus() != SosStatus.DISPATCHING) {
+            throw new BadRequestException("Cannot escalate SOS after driver has accepted");
+        }
+
+        Hospital previousHospital = sos.getHospital();
+
+        // Mark current hospital in history with the reason
+        if (previousHospital != null) {
+            sosHospitalHistoryRepository.findBySosEventIdAndHospitalId(sosId, previousHospital.getId())
+                    .ifPresent(history -> {
+                        history.setRespondedAt(Instant.now());
+                        history.setResponse(reason);
+                        sosHospitalHistoryRepository.save(history);
+                    });
+        }
+
+        // Release any assigned ambulance/driver
+        if (sos.getAmbulance() != null) {
+            sos.getAmbulance().setStatus(AmbulanceStatus.AVAILABLE);
+            ambulanceRepository.save(sos.getAmbulance());
+            sos.setAmbulance(null);
+        }
+        if (sos.getDriver() != null) {
+            sos.getDriver().setStatus(DriverStatus.AVAILABLE);
+            driverRepository.save(sos.getDriver());
+            sos.setDriver(null);
+        }
+
+        // Find next nearest hospital excluding all previously notified
+        Set<Long> excludedHospitalIds = sosHospitalHistoryRepository.findHospitalIdsBySosEventId(sosId);
+        Hospital nextHospital = findNextNearestHospital(
+                sos.getLatitude().doubleValue(),
+                sos.getLongitude().doubleValue(),
+                excludedHospitalIds
+        );
+
+        if (nextHospital == null) {
+            // No more hospitals available
+            sos.setStatus(SosStatus.CREATED);
+            sos.setHospital(null);
+            sos.setAssignedAt(null);
+            sos.setDispatchedAt(null);
+            sosEventRepository.save(sos);
+
+            Notification userNotif = notificationRepository.save(Notification.builder()
+                    .recipientType(RecipientType.USER)
+                    .recipientId(sos.getUser().getId())
+                    .title("No Hospital Available")
+                    .body("All nearby hospitals are currently unable to respond. Please try again or call emergency services.")
+                    .build());
+            broadcastService.broadcastNotificationToUser(sos.getUser().getId(), userNotif);
+
+            log.warn("SOS {} has no more hospitals available after escalation", sosId);
+            SosEventDto dto = sosService.getById(sosId);
+            broadcastService.broadcastSosStatusChange(sosId, dto);
+            return dto;
+        }
+
+        // Assign to new hospital
+        Instant now = Instant.now();
+        sos.setHospital(nextHospital);
+        sos.setAssignedAt(now);
+        sos.setDispatchedAt(null);
+        sos.setStatus(SosStatus.CREATED);
+        sos = sosEventRepository.save(sos);
+
+        // Record new hospital in history
+        sosHospitalHistoryRepository.save(new SosHospitalHistory(sos, nextHospital));
+
+        // Notify new hospital
+        Notification hospitalNotif = notificationRepository.save(Notification.builder()
+                .recipientType(RecipientType.HOSPITAL)
+                .recipientId(nextHospital.getId())
+                .title("New SOS Alert (Escalated)")
+                .body("Patient: " + sos.getUser().getFullName() + " – " +
+                        (sos.getCriticality() != null ? sos.getCriticality().name() : "UNKNOWN") + " severity")
+                .build());
+        broadcastService.broadcastNotificationToHospital(nextHospital.getId(), hospitalNotif);
+        broadcastService.broadcastDashboardRefresh(nextHospital.getId());
+
+        // Notify previous hospital that it was escalated
+        if (previousHospital != null) {
+            Notification prevNotif = notificationRepository.save(Notification.builder()
+                    .recipientType(RecipientType.HOSPITAL)
+                    .recipientId(previousHospital.getId())
+                    .title("SOS Escalated")
+                    .body("SOS #" + sosId + " has been escalated to " + nextHospital.getName())
+                    .build());
+            broadcastService.broadcastNotificationToHospital(previousHospital.getId(), prevNotif);
+            broadcastService.broadcastDashboardRefresh(previousHospital.getId());
+        }
+
+        // Notify user
+        Notification userNotif = notificationRepository.save(Notification.builder()
+                .recipientType(RecipientType.USER)
+                .recipientId(sos.getUser().getId())
+                .title("Request Transferred")
+                .body("Your request is being transferred to " + nextHospital.getName())
+                .build());
+        broadcastService.broadcastNotificationToUser(sos.getUser().getId(), userNotif);
+
+        log.info("SOS {} escalated from {} to {} due to {}",
+                sosId,
+                previousHospital != null ? previousHospital.getName() : "none",
+                nextHospital.getName(),
+                reason);
+
+        SosEventDto dto = sosService.getById(sosId);
+        broadcastService.broadcastSosStatusChange(sosId, dto);
+        return dto;
+    }
+
+    /**
+     * Check if hospital has any available ambulances.
+     */
+    public boolean hasAvailableAmbulance(Long hospitalId) {
+        return !ambulanceRepository.findByHospitalIdAndStatus(hospitalId, AmbulanceStatus.AVAILABLE).isEmpty();
+    }
+
+    private Hospital findNextNearestHospital(double lat, double lng, Set<Long> excludedIds) {
+        return hospitalRepository.findAll().stream()
+                .filter(h -> !excludedIds.contains(h.getId()))
+                .min(Comparator.comparingDouble(h -> SosService.haversine(lat, lng,
+                        h.getLatitude().doubleValue(), h.getLongitude().doubleValue())))
+                .orElse(null);
     }
 
     private Ambulance findNearestAvailableAmbulance(Long hospitalId, double lat, double lng, Set<Long> excluded) {

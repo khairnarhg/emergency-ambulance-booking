@@ -23,7 +23,30 @@ export function sosStatusColor(status: SosStatus): string {
 }
 
 export function sosStatusLabel(status: SosStatus): string {
-  return status.replace(/_/g, ' ');
+  switch (status) {
+    case 'CREATED':
+      return 'Awaiting Dispatch';
+    case 'DISPATCHING':
+      return 'Pending Driver Acceptance';
+    case 'AMBULANCE_ASSIGNED':
+      return 'Driver Accepted';
+    case 'DRIVER_ENROUTE_TO_PATIENT':
+      return 'Driver En Route';
+    case 'REACHED_PATIENT':
+      return 'Reached Patient';
+    case 'PICKED_UP':
+      return 'Patient Picked Up';
+    case 'ENROUTE_TO_HOSPITAL':
+      return 'En Route to Hospital';
+    case 'ARRIVED_AT_HOSPITAL':
+      return 'Arrived at Hospital';
+    case 'COMPLETED':
+      return 'Completed';
+    case 'CANCELLED':
+      return 'Cancelled';
+    default:
+      return (status as string).replace(/_/g, ' ');
+  }
 }
 
 export function criticalityColor(crit: Criticality): string {

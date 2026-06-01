@@ -16,7 +16,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const setAuth = useAuthStore((s) => s.setAuth);
-  const clearAuth = useAuthStore((s) => s.clear);
+  const clearAuth = useAuthStore((s) => s.logout);
   const setHospital = useHospitalStore((s) => s.setHospital);
   const clearHospital = useHospitalStore((s) => s.clear);
   const navigate = useNavigate();

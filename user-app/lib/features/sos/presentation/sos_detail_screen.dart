@@ -16,16 +16,29 @@ class SosDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final sosAsync = ref.watch(sosEventProvider(sosId));
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text('SOS #$sosId'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          onPressed: () => context.pop(),
+    void goBack() {
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/home');
+      }
+    }
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) goBack();
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: Text('SOS #$sosId'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            onPressed: goBack,
+          ),
         ),
-      ),
-      body: sosAsync.when(
+        body: sosAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(
           child: Text(extractErrorMessage(e)),
@@ -182,6 +195,7 @@ class SosDetailScreen extends ConsumerWidget {
           );
         },
       ),
+    ),
     );
   }
 }

@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 /**
  * Ambulance vehicle entity.
@@ -39,4 +40,7 @@ public class Ambulance extends BaseAuditEntity {
 
     @Column(name = "current_longitude", precision = 11, scale = 8)
     private BigDecimal currentLongitude;
+
+    @Column(name = "location_updated_at")
+    private Instant locationUpdatedAt;
 }

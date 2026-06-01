@@ -1,16 +1,38 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Truck, Clock, Stethoscope } from 'lucide-react';
+import { AlertTriangle, Truck, Clock, Stethoscope, XCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { getDashboardSummary, getDashboardActiveSos } from '../api/dashboard.api.ts';
+import { declineSos, escalateDriverTimeout } from '../api/dispatch.api.ts';
 import { useHospitalId } from '../hooks/useHospital.ts';
 import { useStompSubscription } from '../hooks/useStompSubscription.ts';
 import StatCard from '../components/dashboard/StatCard.tsx';
 import Card from '../components/common/Card.tsx';
 import Badge from '../components/common/Badge.tsx';
-import { sosStatusColor, sosStatusLabel, criticalityColor } from '../utils/parseStatus.ts';
+import { sosStatusColor, sosStatusLabel, criticalityColor, getApiErrorMessage } from '../utils/parseStatus.ts';
 import { formatTimeAgo } from '../utils/formatDate.ts';
 import type { SosEvent } from '../types/index.ts';
+
+const TIMEOUT_MINUTES = 5;
+
+function formatTimer(seconds: number) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function calculateRemainingSeconds(sos: SosEvent): number | null {
+  let startTime: string | null = null;
+  if (sos.status === 'CREATED' && sos.assignedAt) {
+    startTime = sos.assignedAt;
+  } else if (sos.status === 'DISPATCHING' && sos.dispatchedAt) {
+    startTime = sos.dispatchedAt;
+  }
+  if (!startTime) return null;
+  const elapsed = (Date.now() - new Date(startTime).getTime()) / 1000;
+  return Math.max(0, Math.floor(TIMEOUT_MINUTES * 60 - elapsed));
+}
 
 export default function DashboardPage() {
   const hospitalId = useHospitalId();
@@ -21,7 +43,7 @@ export default function DashboardPage() {
     queryKey: ['dashboard-summary', hospitalId],
     queryFn: () => getDashboardSummary(hospitalId),
     select: (res) => {
-      const d = res.data as Record<string, unknown>;
+      const d = res.data as unknown as Record<string, unknown>;
       return {
         activeSosCount: d?.activeSosCount ?? d?.activeSos ?? 0,
         availableAmbulances: d?.availableAmbulances ?? 0,
@@ -67,7 +89,30 @@ export default function DashboardPage() {
   const activeSosCount = (summary?.activeSosCount ?? 0) as number;
   const available = (summary?.availableAmbulances ?? 0) as number;
   const total = (summary?.totalAmbulances ?? 0) as number;
-  const ambulancePercent = total > 0 ? Math.round((available / total) * 100) : 0;
+
+  // Timer tick for active SOS countdown
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleDecline = async (sosId: number, status: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (status === 'CREATED') {
+        await declineSos(sosId);
+        toast.success('Request declined');
+      } else if (status === 'DISPATCHING') {
+        await escalateDriverTimeout(sosId);
+        toast.success('Trying another ambulance');
+      }
+      queryClient.invalidateQueries({ queryKey: ['dashboard-active-sos', hospitalId] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-summary', hospitalId] });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -96,17 +141,7 @@ export default function DashboardPage() {
             value={`${available} / ${total}`}
             icon={Truck}
             color="bg-blue-500"
-          >
-            <div className="mt-3">
-              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-blue-500 rounded-full transition-all duration-700 ease-out"
-                  style={{ width: `${ambulancePercent}%` }}
-                />
-              </div>
-              <p className="text-[11px] text-gray-400 mt-1">{ambulancePercent}% available</p>
-            </div>
-          </StatCard>
+          />
         </div>
         <div className="animate-slide-up-fade" style={{ animationDelay: '160ms' }}>
           <StatCard
@@ -147,27 +182,56 @@ export default function DashboardPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Patient</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Criticality</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Timer</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {activeSos.slice(0, 10).map((sos: SosEvent) => (
-                  <tr
-                    key={sos.id}
-                    onClick={() => navigate(`/sos/${sos.id}`)}
-                    className="hover:bg-gray-50 cursor-pointer"
-                  >
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900">#{sos.id}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700">{sos.userName}</td>
-                    <td className="px-4 py-3">
-                      <Badge className={sosStatusColor(sos.status)}>{sosStatusLabel(sos.status)}</Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge className={criticalityColor(sos.criticality)}>{sos.criticality}</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{formatTimeAgo(sos.createdAt)}</td>
-                  </tr>
-                ))}
+                {activeSos.slice(0, 10).map((sos: SosEvent) => {
+                  const remaining = calculateRemainingSeconds(sos);
+                  const showTimer = remaining !== null && remaining > 0;
+                  const canDecline = sos.status === 'CREATED' || sos.status === 'DISPATCHING';
+                  return (
+                    <tr
+                      key={sos.id}
+                      onClick={() => navigate(`/sos/${sos.id}`)}
+                      className="hover:bg-gray-50 cursor-pointer"
+                    >
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">#{sos.id}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{sos.userName}</td>
+                      <td className="px-4 py-3">
+                        <Badge className={sosStatusColor(sos.status)}>{sosStatusLabel(sos.status)}</Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge className={criticalityColor(sos.criticality)}>{sos.criticality}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {showTimer ? (
+                          <span className={`font-mono font-medium ${remaining < 60 ? 'text-red-600' : 'text-amber-600'}`}>
+                            {formatTimer(remaining)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-500">{formatTimeAgo(sos.createdAt)}</td>
+                      <td className="px-4 py-3">
+                        {canDecline ? (
+                          <button
+                            onClick={(e) => handleDecline(sos.id, sos.status, e)}
+                            className="p-1.5 rounded-md text-red-600 hover:bg-red-50 transition-colors"
+                            title={sos.status === 'CREATED' ? 'Decline' : 'Try another'}
+                          >
+                            <XCircle size={18} />
+                          </button>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

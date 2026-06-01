@@ -24,6 +24,7 @@ class _CaseCompleteScreenState extends ConsumerState<CaseCompleteScreen>
   int _triageCount = 0;
   int _medicationCount = 0;
   bool _isLoading = true;
+  bool _isNavigating = false;
   late final AnimationController _animController;
   late final Animation<double> _scaleAnim;
   late final Animation<double> _fadeAnim;
@@ -63,6 +64,13 @@ class _CaseCompleteScreenState extends ConsumerState<CaseCompleteScreen>
       setState(() => _isLoading = false);
       _animController.forward();
     }
+  }
+
+  void _navigateHome() {
+    if (_isNavigating) return;
+    _isNavigating = true;
+    _animController.stop();
+    context.go('/home');
   }
 
   @override
@@ -186,7 +194,7 @@ class _CaseCompleteScreenState extends ConsumerState<CaseCompleteScreen>
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: () => context.go('/home'),
+                  onPressed: _isNavigating ? null : _navigateHome,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.accent,
                     foregroundColor: Colors.white,

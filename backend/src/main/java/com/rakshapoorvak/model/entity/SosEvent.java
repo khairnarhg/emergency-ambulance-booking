@@ -67,4 +67,10 @@ public class SosEvent extends BaseAuditEntity {
 
     @Column(name = "completed_at")
     private Instant completedAt;
+
+    @Column(name = "assigned_at")
+    private Instant assignedAt;
+
+    @Column(name = "dispatched_at")
+    private Instant dispatchedAt;
 }

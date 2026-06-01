@@ -123,8 +123,11 @@ class DispatchNotifier extends StateNotifier<DispatchState> {
     state = state.copyWith(clearActiveCase: true);
   }
 
-  void subscribeToDispatch(int driverId) {
+  void Function(int sosId)? _onNewRequestCallback;
+
+  void subscribeToDispatch(int driverId, {void Function(int sosId)? onNewRequest}) {
     _dispatchUnsub?.call();
+    _onNewRequestCallback = onNewRequest;
     _dispatchUnsub = _wsService.subscribe(
       '/topic/dispatch/driver/$driverId',
       (data) {
@@ -134,6 +137,7 @@ class DispatchNotifier extends StateNotifier<DispatchState> {
           state = state.copyWith(
             pendingRequests: [sos, ...state.pendingRequests],
           );
+          _onNewRequestCallback?.call(sos.id);
         }
       },
     );
